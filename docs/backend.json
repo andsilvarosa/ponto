@@ -1,0 +1,121 @@
+
+{
+  "entities": {
+    "Employee": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Employee",
+      "type": "object",
+      "description": "Represents an employee identified by their unique registration number in the external time clock system.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Employee entity."
+        },
+        "registrationNumber": {
+          "type": "string",
+          "description": "The employee's unique registration number (matrícula) used to access external time clock data."
+        },
+        "uid": {
+          "type": "string",
+          "description": "The current Firebase Auth UID linked to this registration number."
+        },
+        "previousBalance": {
+          "type": "string",
+          "description": "Initial hour balance (HH:MM)."
+        },
+        "previousBalanceMonth": {
+          "type": "number",
+          "description": "The month the initial balance refers to."
+        },
+        "previousBalanceYear": {
+          "type": "number",
+          "description": "The year the initial balance refers to."
+        },
+        "balanceAdjustment": {
+          "type": "string",
+          "description": "Manual balance adjustment for HR differences (HH:MM)."
+        },
+        "previousHolidayBalance": {
+          "type": "number",
+          "description": "Initial holiday balance in days."
+        },
+        "authVersion": {
+          "type": "number",
+          "description": "The version of auth email to allow resetting passwords without Admin SDK."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the employee record was first created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the employee record was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "registrationNumber",
+        "createdAt"
+      ]
+    },
+    "MonthlyTimeRecord": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "MonthlyTimeRecord",
+      "type": "object",
+      "description": "Stores the scraped daily time clock data for a specific employee for a given month.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the MonthlyTimeRecord entity."
+        },
+        "employeeId": {
+          "type": "string",
+          "description": "Reference to the Employee whose time record this is."
+        },
+        "year": {
+          "type": "number",
+          "description": "The year of the monthly time record."
+        },
+        "month": {
+          "type": "number",
+          "description": "The month of the monthly time record (1-12)."
+        },
+        "dailyRecords": {
+          "type": "array",
+          "description": "An array of daily time clock entries for the month.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "employeeId",
+        "year",
+        "month"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/userProfiles/{matricula}",
+        "definition": {
+          "entityName": "Employee",
+          "schema": {
+            "$ref": "#/backend/entities/Employee"
+          },
+          "description": "Stores individual employee records."
+        }
+      }
+    ]
+  }
+}

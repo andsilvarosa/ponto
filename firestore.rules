@@ -1,0 +1,52 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Função de Admin ultra-segura: verifica se o UID logado é o mesmo gravado no perfil mestre 000000
+    function isAdmin() {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/userProfiles/000000) && 
+             get(/databases/$(database)/documents/userProfiles/000000).data.uid == request.auth.uid;
+    }
+
+    match /userProfiles/{matricula} {
+      // Permite ver a própria matrícula para login
+      allow get: if true;
+      
+      // APENAS ADMIN pode listar todos os usuários
+      allow list: if isAdmin();
+      
+      // Permite criação inicial (auto-cadastro)
+      allow create: if true;
+      
+      // Permite atualização pelo dono, admin, ou se for o processo de re-vínculo (UID nulo)
+      allow update: if isSignedIn() && (
+        isAdmin() || 
+        (resource.data.uid == request.auth.uid) ||
+        (!('uid' in resource.data)) ||
+        (resource.data.uid == null)
+      );
+      
+      // Apenas admin pode deletar perfis
+      allow delete: if isAdmin();
+
+      match /monthlySummaries/{summaryId} {
+        allow read, write: if isSignedIn() && (
+          isAdmin() ||
+          (get(/databases/$(database)/documents/userProfiles/$(matricula)).data.uid == request.auth.uid)
+        );
+        
+        match /dailyEntries/{entryId} {
+          allow read, write: if isSignedIn() && (
+            isAdmin() ||
+            (get(/databases/$(database)/documents/userProfiles/$(matricula)).data.uid == request.auth.uid)
+          );
+        }
+      }
+    }
+  }
+}
