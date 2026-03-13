@@ -88,6 +88,7 @@ export function MatriculaInput({ onLogin, isLoading }: MatriculaInputProps) {
               <Input
                 type="text"
                 placeholder="Ex: 000000"
+                autoComplete="off" // <--- Adicione isso para desencorajar o Autofill
                 value={matricula}
                 onChange={(e) => setMatricula(e.target.value)}
                 disabled={checkingMatricula || isLoading}
