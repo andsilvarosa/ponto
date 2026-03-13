@@ -37,4 +37,5 @@ export const dailyEntries = sqliteTable('daily_entries', {
   isHoliday: integer('is_holiday', { mode: 'boolean' }).default(false),
   isCompensation: integer('is_compensation', { mode: 'boolean' }).default(false),
   isBankOff: integer('is_bank_off', { mode: 'boolean' }).default(false),
+  isManual: integer('is_manual', { mode: 'boolean' }).default(false),
 });

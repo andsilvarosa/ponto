@@ -39,7 +39,19 @@ export function EditTimesDialog({ isOpen, record, onSave, onClose }: EditTimesDi
       isManualWork: dayType === 'trabalho',
       isHoliday: dayType === 'feriado',
       isCompensation: dayType === 'compensacao',
-      isBankOff: dayType === 'banco'
+      isBankOff: dayType === 'banco',
+      isManual: true // Sempre marca como manual ao salvar pelo diálogo
+    });
+  };
+
+  const handleReset = () => {
+    onSave(record.times || [], {
+      isManualDsr: false,
+      isManualWork: false,
+      isHoliday: false,
+      isCompensation: false,
+      isBankOff: false,
+      isManual: false // Remove a marca de manual para permitir sobrescrita pelo portal
     });
   };
 
@@ -125,9 +137,14 @@ export function EditTimesDialog({ isOpen, record, onSave, onClose }: EditTimesDi
           </section>
         </div>
 
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose} className="font-bold">Cancelar</Button>
-          <Button onClick={handleSave} className="bg-primary font-bold shadow-lg">Salvar Alterações</Button>
+        <DialogFooter className="flex flex-col sm:flex-row gap-2">
+          <Button variant="outline" onClick={handleReset} className="font-bold border-destructive/30 text-destructive hover:bg-destructive/10">
+            Restaurar Portal
+          </Button>
+          <div className="flex gap-2 ml-auto">
+            <Button variant="ghost" onClick={onClose} className="font-bold">Cancelar</Button>
+            <Button onClick={handleSave} className="bg-primary font-bold shadow-lg">Salvar Alterações</Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

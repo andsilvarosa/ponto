@@ -132,6 +132,18 @@ export function DailyRecordsTable({
                       <div className="flex items-center gap-2">
                         <span className="text-sm">{record.date}</span>
                         {isToday && <Badge variant="secondary" className="text-[8px] h-4 px-1 bg-primary text-primary-foreground font-black">HOJE</Badge>}
+                        {record.isManual && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Badge variant="outline" className="text-[8px] h-4 px-1 border-amber-500 text-amber-600 bg-amber-500/5 font-black">MANUAL</Badge>
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-amber-600 text-white border-none">
+                                <p className="text-[10px] font-bold">Este dia possui ajustes manuais e não será sobrescrito pelo portal.</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                       </div>
                       <div className={cn(
                         "text-[9px] font-black p-0.5 rounded inline-block uppercase",

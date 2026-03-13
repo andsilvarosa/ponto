@@ -152,7 +152,10 @@ export function CalendarViewDialog({
                   )}>
                     {date.getDate()}
                   </span>
-                  {(calendarHoliday || record?.isHoliday) && <Star className="w-3 h-3 text-amber-500 fill-amber-500" />}
+                  <div className="flex gap-1">
+                    {record?.isManual && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-sm" title="Ajuste Manual" />}
+                    {(calendarHoliday || record?.isHoliday) && <Star className="w-3 h-3 text-amber-500 fill-amber-500" />}
+                  </div>
                 </div>
                 
                 <div className="mt-2 space-y-1">

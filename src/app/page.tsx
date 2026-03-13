@@ -32,6 +32,7 @@ export type DailyRecord = {
   isHoliday?: boolean;
   isCompensation?: boolean;
   isBankOff?: boolean;
+  isManual?: boolean;
 };
 
 export type EmployeeData = {

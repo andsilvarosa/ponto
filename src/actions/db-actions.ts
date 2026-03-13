@@ -106,7 +106,8 @@ async function getDb() {
           is_manual_work INTEGER DEFAULT 0,
           is_holiday INTEGER DEFAULT 0,
           is_compensation INTEGER DEFAULT 0,
-          is_bank_off INTEGER DEFAULT 0
+          is_bank_off INTEGER DEFAULT 0,
+          is_manual INTEGER DEFAULT 0
         );
       `);
       return cachedDb;
@@ -204,6 +205,12 @@ export async function saveDailyEntriesBatch(matricula: string, month: number, ye
       const entryId = `${matricula}_${entry.id}`;
       const existing = await db.select().from(dailyEntries).where(eq(dailyEntries.id, entryId)).get();
       
+      // Se o registro já existe e foi marcado como manual, ignoramos a atualização do portal para este dia
+      if (existing && existing.isManual) {
+        console.log(`[DB] Pulando atualização do portal para o dia ${entry.date} (Registro Manual)`);
+        continue;
+      }
+
       const data = {
         monthlyPointSummaryId: summaryId,
         userProfileId: matricula,
@@ -214,6 +221,7 @@ export async function saveDailyEntriesBatch(matricula: string, month: number, ye
         isHoliday: entry.isHoliday || false,
         isCompensation: entry.isCompensation || false,
         isBankOff: entry.isBankOff || false,
+        isManual: false // Registros vindos do portal não são manuais
       };
 
       if (existing) {
@@ -252,15 +260,25 @@ export async function saveSingleEntry(matricula: string, month: number, year: nu
       }).run();
     }
 
+    // Determina se é um lançamento manual
+    // É manual se houver qualquer ajuste de tipo de dia OU se for explicitamente marcado
+    const isManual = data.isManualDsr || data.isManualWork || data.isHoliday || 
+                     data.isCompensation || data.isBankOff || data.isManual === true;
+
+    const finalData = {
+      ...data,
+      isManual: isManual
+    };
+
     const existing = await db.select().from(dailyEntries).where(eq(dailyEntries.id, fullEntryId)).get();
     if (existing) {
-      await db.update(dailyEntries).set(data).where(eq(dailyEntries.id, fullEntryId)).run();
+      await db.update(dailyEntries).set(finalData).where(eq(dailyEntries.id, fullEntryId)).run();
     } else {
       await db.insert(dailyEntries).values({ 
         id: fullEntryId, 
         monthlyPointSummaryId: summaryId,
         userProfileId: matricula,
-        ...data 
+        ...finalData 
       }).run();
     }
     return { success: true };
