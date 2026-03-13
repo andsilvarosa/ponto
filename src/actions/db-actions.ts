@@ -117,13 +117,17 @@ export async function getUserProfile(matricula: string) {
   try {
     const db = await getDb();
     if (!db) {
-      console.warn("Database not available for getUserProfile");
+      console.error("[DB] Banco de dados não disponível para getUserProfile");
       return null;
     }
     const result = await db.select().from(users).where(eq(users.matricula, matricula)).get();
     return result || null;
-  } catch (e) {
-    console.error("Error fetching user profile:", e);
+  } catch (e: any) {
+    if (e?.message?.includes("no such table")) {
+      console.error(`[DB] ERRO CRÍTICO: A tabela 'users' não existe no banco D1. Execute as migrações.`);
+    } else {
+      console.error("[DB] Erro ao buscar perfil do usuário:", e);
+    }
     return null;
   }
 }
