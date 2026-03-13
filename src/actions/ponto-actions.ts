@@ -81,38 +81,67 @@ function extractTimesFromGrid(html: string): string[] {
 function extractCalendarData(html: string, targetMonth: number): { days: Record<number, string>, selectedDay: number | null, calendarId: string } {
   const days: Record<number, string> = {};
   let selectedDay: number | null = null;
-  let calendarId = 'Calendar'; // Default
+  let calendarId = 'Calendar'; 
 
   const monthNames = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+  const monthNamesNoAccent = ["janeiro", "fevereiro", "marco", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+  
   const targetMonthName = monthNames[targetMonth - 1];
+  const targetMonthNameNoAccent = monthNamesNoAccent[targetMonth - 1];
 
-  // 1. Busca links de dias: href="javascript:__doPostBack('ID','ARG')" title="DIA de MES"
-  const linkRegex = /href="javascript:__doPostBack\('([^']+)','(\d+)'\)"[^>]*?title="[^"]*?(\d+)\s+de\s+([^"]+)"/gi;
+  const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  // 1. Busca links de dias com regex mais flexível
+  const linkRegex = /href="javascript:__doPostBack\('([^']+)','([^']+)'\)"[^>]*?title="[^"]*?(\d+)\s+de\s+([^"]+)"/gi;
   let match;
   while ((match = linkRegex.exec(html)) !== null) {
     const id = match[1];
     const arg = match[2];
     const day = parseInt(match[3]);
     const monthStr = match[4].toLowerCase();
+    const normalizedMonthStr = normalize(monthStr);
     
-    calendarId = id; // Assume o ID do primeiro link encontrado
-    if (monthStr.includes(targetMonthName)) {
+    if (id.includes('Calendar') || !calendarId) {
+      calendarId = id;
+    }
+
+    if (normalizedMonthStr.includes(targetMonthNameNoAccent) || normalizedMonthStr.includes(targetMonthName)) {
       days[day] = arg;
     }
   }
 
-  // 2. Busca o dia selecionado (que não tem link)
-  // Geralmente é um <td> com estilo diferente ou um <span> dentro de um <td>
-  // Tentamos encontrar o dia que está no calendário mas não é link
-  const allDaysRegex = />\s*(\d{1,2})\s*<\/td>/gi;
-  while ((match = allDaysRegex.exec(html)) !== null) {
+  // 2. Fallback/Complemento: Busca pelo conteúdo da tag <a> se o dia ainda não foi encontrado
+  const fallbackLinkRegex = /href="javascript:__doPostBack\('([^']+)','([^']+)'\)"[^>]*?>\s*(\d{1,2})\s*<\/a>/gi;
+  while ((match = fallbackLinkRegex.exec(html)) !== null) {
+    const id = match[1];
+    const arg = match[2];
+    const day = parseInt(match[3]);
+    
+    if (!days[day] && day >= 1 && day <= 31) {
+      // Se não temos o título para confirmar o mês, mas o ID contém 'Calendar', 
+      // e estamos no contexto de um calendário do mês alvo, é seguro assumir que é o dia correto.
+      if (id.includes('Calendar') || id.includes('V4321') || id.includes('V4322')) {
+        days[day] = arg;
+        if (id.includes('Calendar')) calendarId = id;
+      }
+    }
+  }
+
+  // 3. Busca o dia selecionado (que não tem link)
+  const selectedDayRegex = /<td[^>]*?(?:background-color|selected|font-weight:bold|color:White|#333333|#CCCCCC)[^>]*?>\s*(?:<[^>]+>)*\s*(\d{1,2})\s*(?:<[^>]+>)*\s*<\/td>/gi;
+  while ((match = selectedDayRegex.exec(html)) !== null) {
     const day = parseInt(match[1]);
-    if (day >= 1 && day <= 31 && !days[day]) {
-      // Se o dia está no HTML mas não é link, e estamos no mês certo, provavelmente é o selecionado
-      // Verificamos se o contexto ao redor sugere que é o dia selecionado (ex: cor de fundo)
-      const context = html.substring(match.index - 100, match.index + 100);
-      if (context.toLowerCase().includes('background-color') || context.toLowerCase().includes('selected') || context.toLowerCase().includes('font-weight:bold')) {
-          selectedDay = day;
+    if (day >= 1 && day <= 31) {
+      selectedDay = day;
+    }
+  }
+
+  if (!selectedDay) {
+    const allDaysRegex = />\s*(\d{1,2})\s*<\/td>/gi;
+    while ((match = allDaysRegex.exec(html)) !== null) {
+      const day = parseInt(match[1]);
+      if (day >= 1 && day <= 31 && !days[day]) {
+        selectedDay = day;
       }
     }
   }

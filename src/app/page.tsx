@@ -285,7 +285,11 @@ export default function Home() {
                       return;
                     }
                     console.log("[Update] Data received, normalizing...");
-                    const normalizedData = normalizeNightShifts(freshData.map(d => ({ ...d, times: [...d.times] })));
+                    const normalizedData = normalizeNightShifts(freshData.map(d => ({ 
+                      ...d, 
+                      id: d.date.replace(/\//g, '-'), // Adiciona ID baseado na data
+                      times: [...d.times] 
+                    })));
                     
                     console.log("[Update] Saving batch...");
                     await saveDailyEntriesBatch(matricula, viewMonth, viewYear, normalizedData);
