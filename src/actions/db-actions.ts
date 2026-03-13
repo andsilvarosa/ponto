@@ -62,7 +62,7 @@ async function getDb() {
       return null;
     }
 
-    console.log("[DB] Tentando fallback para SQLite local (local.db)");
+    console.log(`[DB] Tentando fallback para SQLite local (local.db)`);
     try {
       const moduleName = 'better-sqlite3';
       const drizzleModuleName = 'drizzle-orm/better-sqlite3';
@@ -81,8 +81,8 @@ async function getDb() {
         return null;
       }
       
-      const sqlite = new Database('local.db', { timeout: 5000 });
-      sqlite.pragma('journal_mode = WAL');
+      const sqlite = new Database('local.db', { timeout: 10000 });
+      // sqlite.pragma('journal_mode = WAL'); // Removido temporariamente para evitar problemas de trava em alguns ambientes
       sqlite.pragma('foreign_keys = ON');
       
       cachedDb = drizzleSqlite(sqlite);
@@ -321,6 +321,19 @@ export async function getAllUsers() {
   } catch (e) {
     console.error("Error fetching all users:", e);
     return [];
+  }
+}
+
+export async function debugListUsers() {
+  try {
+    const db = await getDb();
+    if (!db) return { success: false, error: "DB not available" };
+    const allUsers = await db.select().from(users).all();
+    console.log(`[DEBUG] Total de usuários no banco: ${allUsers.length}`);
+    return { success: true, count: allUsers.length, users: allUsers.map((u: any) => u.matricula) };
+  } catch (e: any) {
+    console.error("[DEBUG] Erro ao listar usuários:", e);
+    return { success: false, error: e.message };
   }
 }
 

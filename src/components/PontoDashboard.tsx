@@ -68,6 +68,10 @@ export default function PontoDashboard() {
     const now = new Date();
     if (viewMonth === null) setViewMonth(now.getMonth() + 1);
     if (viewYear === null) setViewYear(now.getFullYear());
+    
+    // Debug: Listar usuários no console
+    import('@/actions/db-actions').then(m => m.debugListUsers()).then(res => console.log("[DEBUG] Usuários no banco:", res));
+    
     setIsUserLoading(false);
   }, []);
 
@@ -112,11 +116,14 @@ export default function PontoDashboard() {
       }
 
       const parseJson = (val: any, fallback: any) => {
-        if (!val) return fallback;
+        if (val === null || val === undefined || val === '') return fallback;
         if (typeof val !== 'string') return val;
+        const trimmed = val.trim();
+        if (!trimmed) return fallback;
         try {
-          return JSON.parse(val);
+          return JSON.parse(trimmed);
         } catch (e) {
+          console.warn("[JSON] Erro ao parsear:", val, e);
           return fallback;
         }
       };
@@ -139,9 +146,9 @@ export default function PontoDashboard() {
         uid: base?.uid,
         authVersion: base?.authVersion
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error loading data:", e);
-      toast({ variant: "destructive", title: "Erro ao carregar dados" });
+      toast({ variant: "destructive", title: "Erro ao carregar dados", description: e.message });
     } finally {
       setIsLoading(false);
     }
