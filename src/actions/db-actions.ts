@@ -10,13 +10,12 @@ let localDb: any = null;
 async function getDb() {
   // 1. Try Cloudflare Request Context (Edge Runtime)
   try {
-    // getRequestContext can throw if not in a request context or if the library is not initialized
     const context = getRequestContext();
     if (context?.env?.DB) {
       return drizzle(context.env.DB);
     }
   } catch (e) {
-    // Not in Cloudflare Edge environment or context not available
+    // Not in Cloudflare Edge environment
   }
 
   // 2. Try process.env.DB (Cloudflare Node.js runtime or local emulation)
@@ -26,16 +25,21 @@ async function getDb() {
   }
 
   // 3. Local Fallback for AI Studio Preview / Development
-  if (process.env.NODE_ENV === 'development' || !process.env.NEXT_RUNTIME || process.env.NEXT_RUNTIME === 'nodejs') {
+  // Using eval('require') to hide these from Webpack/Vite bundlers
+  // which would otherwise try to resolve 'fs' and 'path' dependencies
+  if (typeof process !== 'undefined' && process.env.NEXT_RUNTIME !== 'edge') {
     if (!localDb) {
       try {
-        const { drizzle: drizzleSqlite } = await import('drizzle-orm/better-sqlite3');
-        const Database = (await import('better-sqlite3')).default;
+        // Use dynamic require to avoid bundling issues in Edge/Browser
+        const requireFunc = typeof __webpack_require__ === "function" ? __non_webpack_require__ : require;
+        
+        const { drizzle: drizzleSqlite } = requireFunc('drizzle-orm/better-sqlite3');
+        const Database = requireFunc('better-sqlite3');
+        
         const sqlite = new Database('local.db');
         localDb = drizzleSqlite(sqlite);
         
         // Basic initialization for local development
-        // In a real app, you'd use migrations
         sqlite.exec(`
           CREATE TABLE IF NOT EXISTS users (
             matricula TEXT PRIMARY KEY,
@@ -83,6 +87,10 @@ async function getDb() {
 
   return null;
 }
+
+// Declare global for webpack
+declare var __webpack_require__: any;
+declare var __non_webpack_require__: any;
 
 export async function getUserProfile(matricula: string) {
   try {

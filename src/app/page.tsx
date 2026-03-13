@@ -1,8 +1,6 @@
 
 'use client';
 
-export const runtime = 'edge';
-
 import { useState, useEffect } from 'react';
 import { MatriculaInput } from '@/components/MatriculaInput';
 import { SummaryCards } from '@/components/dashboard/SummaryCards';
