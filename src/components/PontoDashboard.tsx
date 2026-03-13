@@ -80,12 +80,16 @@ export default function PontoDashboard() {
   }, [isUserLoading, viewMonth, viewYear]);
 
   const loadEmployeeData = async (m: string, month: number, year: number) => {
+    if (!m) return;
     setIsLoading(true);
     try {
-      let base = await getUserProfile(m) || { isAdmin: m === '000000' } as any;
-
+      console.log(`[Dashboard] Carregando dados para ${m} (${month}/${year})`);
+      const base = await getUserProfile(m);
       const rawRecords = await getMonthlyEntries(m, month, year);
-      const mappedRecords = rawRecords.map((r: any) => ({
+      
+      console.log(`[Dashboard] Perfil: ${base ? 'Encontrado' : 'Não encontrado'}, Entradas: ${rawRecords.length}`);
+
+      const mappedRecords = (rawRecords || []).map((r: any) => ({
         ...r,
         id: r.id.replace(`${m}_`, ''),
       })) as DailyRecord[];
@@ -169,14 +173,42 @@ export default function PontoDashboard() {
     }
   };
 
+  const handleLogin = async (m: string, pass: string, isSignUp: boolean) => {
+    setIsLoading(true);
+    try {
+      const user = await getUserProfile(m);
+      
+      if (isSignUp) {
+        // Primeiro acesso ou reset: define a senha (UID)
+        await saveUserProfile(m, { uid: pass, updatedAt: new Date().toISOString() });
+        toast({ title: "Acesso configurado com sucesso!" });
+      } else {
+        // Login normal: verifica a senha (UID)
+        if (user && user.uid && user.uid !== pass) {
+          toast({ variant: "destructive", title: "Senha incorreta", description: "Verifique seus dados ou procure um administrador." });
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      setMatricula(m);
+      localStorage.setItem('logged_matricula', m);
+      if (viewMonth && viewYear) await loadEmployeeData(m, viewMonth, viewYear);
+    } catch (e: any) {
+      console.error("Erro no login:", e);
+      toast({ variant: "destructive", title: "Erro ao entrar", description: e.message });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (!matricula) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <MatriculaInput onLogin={(m) => {
-          setMatricula(m);
-          localStorage.setItem('logged_matricula', m);
-          if (viewMonth && viewYear) loadEmployeeData(m, viewMonth, viewYear);
-        }} />
+        <MatriculaInput 
+          onLogin={handleLogin}
+          isLoading={isLoading}
+        />
       </div>
     );
   }
@@ -263,6 +295,8 @@ export default function PontoDashboard() {
                     await saveDailyEntriesBatch(matricula, viewMonth, viewYear, normalizedData);
 
                     console.log("[Update] Reloading local data...");
+                    // Pequeno delay para garantir que o banco terminou de escrever
+                    await new Promise(resolve => setTimeout(resolve, 500));
                     await loadEmployeeData(matricula, viewMonth, viewYear);
                     toast({ title: "Portal sincronizado!" });
                   } catch (e: any) {

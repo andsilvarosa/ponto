@@ -5,139 +5,143 @@ import { eq, and } from 'drizzle-orm';
 
 // Cache para as instâncias do banco
 let cachedDb: any = null;
+let initializationPromise: Promise<any> | null = null;
 
 async function getDb() {
   if (cachedDb) return cachedDb;
+  if (initializationPromise) return initializationPromise;
 
-  const isProd = process.env.NODE_ENV === 'production';
-  const isEdge = process.env.NEXT_RUNTIME === 'edge' || (typeof EdgeRuntime !== 'undefined');
-  
-  console.log(`[DB] Inicializando conexão. Prod: ${isProd}, Edge: ${isEdge}, Runtime: ${process.env.NEXT_RUNTIME}`);
-  
-  // Tenta encontrar o binding do Cloudflare D1
-  let dbBinding: any = null;
-  
-  // Estratégia A: process.env.DB (Padrão Cloudflare)
-  if (process.env.DB) {
-    dbBinding = process.env.DB;
-    console.log("[DB] Estratégia A: Encontrado em process.env.DB");
-  }
-  
-  // Estratégia B: getRequestContext (Cloudflare next-on-pages)
-  if (!dbBinding) {
-    try {
-      const { getRequestContext } = await import('@cloudflare/next-on-pages');
-      const ctx = getRequestContext();
-      if (ctx?.env?.DB) {
-        dbBinding = ctx.env.DB;
-        console.log("[DB] Estratégia B: Encontrado via getRequestContext");
-      } else {
-        console.log("[DB] Estratégia B: getRequestContext disponível mas env.DB não encontrado");
-      }
-    } catch (e) {
-      // console.log("[DB] Estratégia B: getRequestContext falhou ou não disponível");
-    }
-  }
-  
-  // Estratégia C: globalThis.DB (Fallback comum em Workers)
-  if (!dbBinding && (globalThis as any).DB) {
-    dbBinding = (globalThis as any).DB;
-    console.log("[DB] Estratégia C: Encontrado em globalThis.DB");
-  }
-
-  if (!dbBinding && isProd) {
-    console.error("[DB] ERRO: Binding 'DB' não encontrado em nenhuma das estratégias (A, B, C) em produção.");
-  }
-
-  // 1. SE ENCONTROU D1 (CLOUDFLARE)
-  if (dbBinding) {
-    console.log("[DB] Usando Cloudflare D1");
-    try {
-      const { drizzle: drizzleD1 } = await import('drizzle-orm/d1');
-      cachedDb = drizzleD1(dbBinding);
-      return cachedDb;
-    } catch (e) {
-      console.error("[DB] Erro ao inicializar D1:", e);
-    }
-  }
-
-  // 2. FALLBACK PARA SQLITE (AI STUDIO / LOCAL)
-  if (isEdge) {
-    console.warn("[DB] Edge Runtime detectado. SQLite (better-sqlite3) não é suportado neste ambiente.");
-    return null;
-  }
-
-  console.log("[DB] Tentando fallback para SQLite local (local.db)");
-  try {
-    const moduleName = 'better-sqlite3';
-    const drizzleModuleName = 'drizzle-orm/better-sqlite3';
+  initializationPromise = (async () => {
+    const isProd = process.env.NODE_ENV === 'production';
+    const isEdge = process.env.NEXT_RUNTIME === 'edge' || (typeof EdgeRuntime !== 'undefined');
     
-    // Usamos eval('require') para esconder do bundler (Vite/Webpack)
-    // mas ainda precisamos tratar o erro se o ambiente não suportar require ou o módulo
-    let Database;
-    let drizzleSqlite;
+    console.log(`[DB] Inicializando conexão. Prod: ${isProd}, Edge: ${isEdge}, Runtime: ${process.env.NEXT_RUNTIME}`);
     
-    try {
-      Database = eval('require')(moduleName);
-      const drizzleModule = eval('require')(drizzleModuleName);
-      drizzleSqlite = drizzleModule.drizzle;
-    } catch (requireError) {
-      if (!isEdge) {
-        console.error("[DB] Erro ao carregar módulos do SQLite (better-sqlite3). Certifique-se de que está em um ambiente Node.js.", requireError);
+    // Tenta encontrar o binding do Cloudflare D1
+    let dbBinding: any = null;
+    
+    // Estratégia A: process.env.DB (Padrão Cloudflare)
+    if (process.env.DB) {
+      dbBinding = process.env.DB;
+      console.log("[DB] Estratégia A: Encontrado em process.env.DB");
+    }
+    
+    // Estratégia B: getRequestContext (Cloudflare next-on-pages)
+    if (!dbBinding) {
+      try {
+        const { getRequestContext } = await import('@cloudflare/next-on-pages');
+        const ctx = getRequestContext();
+        if (ctx?.env?.DB) {
+          dbBinding = ctx.env.DB;
+          console.log("[DB] Estratégia B: Encontrado via getRequestContext");
+        }
+      } catch (e) {}
+    }
+    
+    // Estratégia C: globalThis.DB (Fallback comum em Workers)
+    if (!dbBinding && (globalThis as any).DB) {
+      dbBinding = (globalThis as any).DB;
+      console.log("[DB] Estratégia C: Encontrado em globalThis.DB");
+    }
+
+    // 1. SE ENCONTROU D1 (CLOUDFLARE)
+    if (dbBinding) {
+      console.log("[DB] Usando Cloudflare D1");
+      try {
+        const { drizzle: drizzleD1 } = await import('drizzle-orm/d1');
+        cachedDb = drizzleD1(dbBinding);
+        return cachedDb;
+      } catch (e) {
+        console.error("[DB] Erro ao inicializar D1:", e);
       }
+    }
+
+    // 2. FALLBACK PARA SQLITE (AI STUDIO / LOCAL)
+    if (isEdge) {
+      console.warn("[DB] Edge Runtime detectado. SQLite não disponível.");
       return null;
     }
-    
-    const sqlite = new Database('local.db');
-    cachedDb = drizzleSqlite(sqlite);
-    
-    // Inicialização das tabelas
-    sqlite.exec(`
-      CREATE TABLE IF NOT EXISTS users (
-        matricula TEXT PRIMARY KEY,
-        uid TEXT UNIQUE,
-        is_admin INTEGER DEFAULT 0,
-        auth_version INTEGER DEFAULT 0,
-        previous_balance TEXT DEFAULT '00:00',
-        previous_balance_month INTEGER,
-        previous_balance_year INTEGER,
-        balance_adjustment TEXT DEFAULT '00:00',
-        previous_holiday_balance INTEGER DEFAULT 0,
-        fixed_dsr_days TEXT,
-        reference_dsr_sunday TEXT,
-        daily_workload INTEGER DEFAULT 440,
-        holidays TEXT,
-        registration_number TEXT,
-        updated_at TEXT
-      );
-      CREATE TABLE IF NOT EXISTS monthly_summaries (
-        id TEXT PRIMARY KEY,
-        user_profile_id TEXT REFERENCES users(matricula) ON DELETE CASCADE,
-        year INTEGER,
-        month INTEGER,
-        scraped_at TEXT
-      );
-      CREATE TABLE IF NOT EXISTS daily_entries (
-        id TEXT PRIMARY KEY,
-        monthly_point_summary_id TEXT REFERENCES monthly_summaries(id) ON DELETE CASCADE,
-        user_profile_id TEXT REFERENCES users(matricula) ON DELETE CASCADE,
-        date TEXT,
-        times TEXT,
-        is_manual_dsr INTEGER DEFAULT 0,
-        is_manual_work INTEGER DEFAULT 0,
-        is_holiday INTEGER DEFAULT 0,
-        is_compensation INTEGER DEFAULT 0,
-        is_bank_off INTEGER DEFAULT 0
-      );
-    `);
-    return cachedDb;
-  } catch (e) {
-    console.error("[DB] Erro crítico ao inicializar SQLite:", e);
-    return null;
-  }
+
+    console.log("[DB] Tentando fallback para SQLite local (local.db)");
+    try {
+      const moduleName = 'better-sqlite3';
+      const drizzleModuleName = 'drizzle-orm/better-sqlite3';
+      
+      let Database;
+      let drizzleSqlite;
+      
+      try {
+        Database = eval('require')(moduleName);
+        const drizzleModule = eval('require')(drizzleModuleName);
+        drizzleSqlite = drizzleModule.drizzle;
+      } catch (requireError) {
+        if (!isEdge) {
+          console.error("[DB] Erro ao carregar módulos do SQLite.", requireError);
+        }
+        return null;
+      }
+      
+      const sqlite = new Database('local.db', { timeout: 5000 });
+      sqlite.pragma('journal_mode = WAL');
+      sqlite.pragma('foreign_keys = ON');
+      
+      cachedDb = drizzleSqlite(sqlite);
+      
+      // Inicialização das tabelas
+      sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS users (
+          matricula TEXT PRIMARY KEY,
+          uid TEXT UNIQUE,
+          is_admin INTEGER DEFAULT 0,
+          auth_version INTEGER DEFAULT 0,
+          previous_balance TEXT DEFAULT '00:00',
+          previous_balance_month INTEGER,
+          previous_balance_year INTEGER,
+          balance_adjustment TEXT DEFAULT '00:00',
+          previous_holiday_balance INTEGER DEFAULT 0,
+          fixed_dsr_days TEXT,
+          reference_dsr_sunday TEXT,
+          daily_workload INTEGER DEFAULT 440,
+          holidays TEXT,
+          registration_number TEXT,
+          updated_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS monthly_summaries (
+          id TEXT PRIMARY KEY,
+          user_profile_id TEXT,
+          year INTEGER,
+          month INTEGER,
+          scraped_at TEXT,
+          FOREIGN KEY(user_profile_id) REFERENCES users(matricula) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS daily_entries (
+          id TEXT PRIMARY KEY,
+          monthly_point_summary_id TEXT,
+          user_profile_id TEXT,
+          date TEXT,
+          times TEXT,
+          is_manual_dsr INTEGER DEFAULT 0,
+          is_manual_work INTEGER DEFAULT 0,
+          is_holiday INTEGER DEFAULT 0,
+          is_compensation INTEGER DEFAULT 0,
+          is_bank_off INTEGER DEFAULT 0,
+          FOREIGN KEY(monthly_point_summary_id) REFERENCES monthly_summaries(id) ON DELETE CASCADE,
+          FOREIGN KEY(user_profile_id) REFERENCES users(matricula) ON DELETE CASCADE
+        );
+      `);
+      
+      return cachedDb;
+    } catch (e) {
+      console.error("[DB] Erro crítico ao inicializar SQLite:", e);
+      return null;
+    }
+  })();
+
+  return initializationPromise;
 }
 
 export async function getUserProfile(matricula: string) {
+  console.log(`[DB] getUserProfile chamado para: ${matricula}`);
   try {
     const db = await getDb();
     if (!db) {
@@ -147,11 +151,7 @@ export async function getUserProfile(matricula: string) {
     const result = await db.select().from(users).where(eq(users.matricula, matricula)).get();
     return result ? JSON.parse(JSON.stringify(result)) : null;
   } catch (e: any) {
-    if (e?.message?.includes("no such table")) {
-      console.error(`[DB] ERRO CRÍTICO: A tabela 'users' não existe no banco D1. Execute as migrações.`);
-    } else {
-      console.error("[DB] Erro ao buscar perfil do usuário:", e);
-    }
+    console.error(`[DB] Erro em getUserProfile(${matricula}):`, e);
     return null;
   }
 }
@@ -177,6 +177,7 @@ export async function saveUserProfile(matricula: string, data: any) {
 }
 
 export async function getMonthlyEntries(matricula: string, month: number, year: number) {
+  console.log(`[DB] getMonthlyEntries chamado para: ${matricula} (${month}/${year})`);
   try {
     const db = await getDb();
     if (!db) return [];
@@ -191,7 +192,7 @@ export async function getMonthlyEntries(matricula: string, month: number, year: 
       
     return entries ? JSON.parse(JSON.stringify(entries)) : [];
   } catch (e) {
-    console.error("Error fetching monthly entries:", e);
+    console.error(`[DB] Erro em getMonthlyEntries(${matricula}):`, e);
     return [];
   }
 }
