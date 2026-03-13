@@ -1,4 +1,9 @@
-name = "ponto-agil"
+name = "ponto"
 compatibility_date = "2024-03-12"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ponto"
+database_id = "088b8a35-e578-4cd0-8919-0315ddaf345d"
