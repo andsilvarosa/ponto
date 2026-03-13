@@ -12,6 +12,8 @@ async function getDb() {
   const isProd = process.env.NODE_ENV === 'production';
   const isEdge = process.env.NEXT_RUNTIME === 'edge' || (typeof EdgeRuntime !== 'undefined');
   
+  console.log(`[DB] Inicializando conexão. Prod: ${isProd}, Edge: ${isEdge}, Runtime: ${process.env.NEXT_RUNTIME}`);
+  
   // Tenta encontrar o binding do Cloudflare D1
   let dbBinding: any = null;
   
@@ -60,13 +62,29 @@ async function getDb() {
   }
 
   // 2. FALLBACK PARA SQLITE (AI STUDIO / LOCAL)
-  console.log("[DB] Usando SQLite local (local.db)");
+  if (isEdge) {
+    console.warn("[DB] Edge Runtime detectado. SQLite (better-sqlite3) não é suportado neste ambiente.");
+    return null;
+  }
+
+  console.log("[DB] Tentando fallback para SQLite local (local.db)");
   try {
     const moduleName = 'better-sqlite3';
     const drizzleModuleName = 'drizzle-orm/better-sqlite3';
     
-    const Database = eval('require')(moduleName);
-    const { drizzle: drizzleSqlite } = eval('require')(drizzleModuleName);
+    // Usamos eval('require') para esconder do bundler (Vite/Webpack)
+    // mas ainda precisamos tratar o erro se o ambiente não suportar require ou o módulo
+    let Database;
+    let drizzleSqlite;
+    
+    try {
+      Database = eval('require')(moduleName);
+      const drizzleModule = eval('require')(drizzleModuleName);
+      drizzleSqlite = drizzleModule.drizzle;
+    } catch (requireError) {
+      console.error("[DB] Erro ao carregar módulos do SQLite (better-sqlite3). Certifique-se de que está em um ambiente Node.js.", requireError);
+      return null;
+    }
     
     const sqlite = new Database('local.db');
     cachedDb = drizzleSqlite(sqlite);
@@ -112,7 +130,7 @@ async function getDb() {
     `);
     return cachedDb;
   } catch (e) {
-    console.error("[DB] Erro ao inicializar SQLite:", e);
+    console.error("[DB] Erro crítico ao inicializar SQLite:", e);
     return null;
   }
 }
