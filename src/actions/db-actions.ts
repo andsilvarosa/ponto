@@ -5,28 +5,88 @@ import { drizzle } from 'drizzle-orm/d1';
 import { users, monthlySummaries, dailyEntries } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 
-function getDb() {
+let localDb: any = null;
+
+async function getDb() {
+  // 1. Try Cloudflare Request Context (Edge Runtime)
   try {
+    // getRequestContext can throw if not in a request context or if the library is not initialized
     const context = getRequestContext();
-    if (!context) {
-      console.error("No request context found. This might happen during SSR or build time.");
-      return null;
+    if (context?.env?.DB) {
+      return drizzle(context.env.DB);
     }
-    const env = context.env as CloudflareEnv;
-    if (!env?.DB) {
-      console.error("D1 Database binding 'DB' not found in environment.");
-      return null;
-    }
-    return drizzle(env.DB);
   } catch (e) {
-    console.error("Error getting database context:", e);
-    return null;
+    // Not in Cloudflare Edge environment or context not available
   }
+
+  // 2. Try process.env.DB (Cloudflare Node.js runtime or local emulation)
+  const env = process.env as any;
+  if (env.DB && typeof env.DB.prepare === 'function') {
+    return drizzle(env.DB);
+  }
+
+  // 3. Local Fallback for AI Studio Preview / Development
+  if (process.env.NODE_ENV === 'development' || !process.env.NEXT_RUNTIME || process.env.NEXT_RUNTIME === 'nodejs') {
+    if (!localDb) {
+      try {
+        const { drizzle: drizzleSqlite } = await import('drizzle-orm/better-sqlite3');
+        const Database = (await import('better-sqlite3')).default;
+        const sqlite = new Database('local.db');
+        localDb = drizzleSqlite(sqlite);
+        
+        // Basic initialization for local development
+        // In a real app, you'd use migrations
+        sqlite.exec(`
+          CREATE TABLE IF NOT EXISTS users (
+            matricula TEXT PRIMARY KEY,
+            uid TEXT UNIQUE,
+            is_admin INTEGER DEFAULT 0,
+            auth_version INTEGER DEFAULT 0,
+            previous_balance TEXT DEFAULT '00:00',
+            previous_balance_month INTEGER,
+            previous_balance_year INTEGER,
+            balance_adjustment TEXT DEFAULT '00:00',
+            previous_holiday_balance INTEGER DEFAULT 0,
+            fixed_dsr_days TEXT,
+            reference_dsr_sunday TEXT,
+            daily_workload INTEGER DEFAULT 440,
+            holidays TEXT,
+            registration_number TEXT,
+            updated_at TEXT
+          );
+          CREATE TABLE IF NOT EXISTS monthly_summaries (
+            id TEXT PRIMARY KEY,
+            user_profile_id TEXT REFERENCES users(matricula) ON DELETE CASCADE,
+            year INTEGER,
+            month INTEGER,
+            scraped_at TEXT
+          );
+          CREATE TABLE IF NOT EXISTS daily_entries (
+            id TEXT PRIMARY KEY,
+            monthly_point_summary_id TEXT REFERENCES monthly_summaries(id) ON DELETE CASCADE,
+            user_profile_id TEXT REFERENCES users(matricula) ON DELETE CASCADE,
+            date TEXT,
+            times TEXT,
+            is_manual_dsr INTEGER DEFAULT 0,
+            is_manual_work INTEGER DEFAULT 0,
+            is_holiday INTEGER DEFAULT 0,
+            is_compensation INTEGER DEFAULT 0,
+            is_bank_off INTEGER DEFAULT 0
+          );
+        `);
+      } catch (e) {
+        console.error("Failed to initialize local SQLite fallback:", e);
+      }
+    }
+    return localDb;
+  }
+
+  return null;
 }
 
 export async function getUserProfile(matricula: string) {
   try {
-    const db = getDb();
+    const db = await getDb();
     if (!db) {
       console.warn("Database not available for getUserProfile");
       return null;
@@ -41,7 +101,7 @@ export async function getUserProfile(matricula: string) {
 
 export async function saveUserProfile(matricula: string, data: any) {
   try {
-    const db = getDb();
+    const db = await getDb();
     if (!db) throw new Error("Database not available");
     const existing = await getUserProfile(matricula);
     if (existing) {
@@ -58,7 +118,7 @@ export async function saveUserProfile(matricula: string, data: any) {
 
 export async function getMonthlyEntries(matricula: string, month: number, year: number) {
   try {
-    const db = getDb();
+    const db = await getDb();
     if (!db) return [];
     const mYear = `${year}-${month.toString().padStart(2, '0')}`;
     const summaryId = `${matricula}_${mYear}`;
@@ -78,7 +138,7 @@ export async function getMonthlyEntries(matricula: string, month: number, year: 
 
 export async function saveDailyEntriesBatch(matricula: string, month: number, year: number, entries: any[]) {
   try {
-    const db = getDb();
+    const db = await getDb();
     if (!db) throw new Error("Database not available");
     const mYear = `${year}-${month.toString().padStart(2, '0')}`;
     const summaryId = `${matricula}_${mYear}`;
@@ -127,7 +187,7 @@ export async function saveDailyEntriesBatch(matricula: string, month: number, ye
 
 export async function saveSingleEntry(matricula: string, month: number, year: number, entryId: string, data: any) {
   try {
-    const db = getDb();
+    const db = await getDb();
     if (!db) throw new Error("Database not available");
     const fullEntryId = `${matricula}_${entryId}`;
     const mYear = `${year}-${month.toString().padStart(2, '0')}`;
@@ -165,7 +225,7 @@ export async function saveSingleEntry(matricula: string, month: number, year: nu
 
 export async function getAllUsers() {
   try {
-    const db = getDb();
+    const db = await getDb();
     if (!db) return [];
     return await db.select().from(users).all();
   } catch (e) {
@@ -176,7 +236,7 @@ export async function getAllUsers() {
 
 export async function resetUserAuthVersion(matricula: string) {
   try {
-    const db = getDb();
+    const db = await getDb();
     if (!db) throw new Error("Database not available");
     const user = await getUserProfile(matricula);
     if (!user) throw new Error("User not found");
