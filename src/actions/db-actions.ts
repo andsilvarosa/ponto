@@ -15,18 +15,17 @@ async function getDb() {
   // 1. AMBIENTE CLOUDFLARE (EDGE) - PRODUÇÃO
   if (isEdge || isProd) {
     try {
-      console.log("[DB] Iniciando busca de binding D1...");
+      console.log("[DB] Iniciando busca exaustiva de binding D1...");
       
-      // No Cloudflare Pages com Next.js 15, o binding pode estar em múltiplos lugares
       let dbBinding: any = null;
 
-      // Tentar via process.env (comum em builds recentes)
+      // Estratégia A: process.env.DB (Padrão Nodejs Compat)
       if (typeof process !== 'undefined' && (process.env as any).DB) {
         dbBinding = (process.env as any).DB;
         console.log("[DB] Binding encontrado em process.env.DB");
       }
 
-      // Tentar via getRequestContext se o anterior falhar
+      // Estratégia B: getRequestContext (Padrão Cloudflare Pages)
       if (!dbBinding) {
         try {
           const { getRequestContext } = await import('@cloudflare/next-on-pages');
@@ -34,8 +33,14 @@ async function getDb() {
           dbBinding = context?.env?.DB;
           if (dbBinding) console.log("[DB] Binding encontrado em getRequestContext().env.DB");
         } catch (e) {
-          console.log("[DB] getRequestContext não disponível");
+          console.log("[DB] getRequestContext não disponível ou falhou");
         }
+      }
+
+      // Estratégia C: Global env (Fallback extremo)
+      if (!dbBinding && typeof (globalThis as any).__env__ !== 'undefined') {
+        dbBinding = (globalThis as any).__env__?.DB;
+        if (dbBinding) console.log("[DB] Binding encontrado em globalThis.__env__.DB");
       }
 
       if (dbBinding) {
@@ -44,7 +49,7 @@ async function getDb() {
         return cachedDb;
       }
       
-      console.error("[DB] ERRO: Binding 'DB' não encontrado. Verifique as configurações do Cloudflare Pages.");
+      console.error("[DB] ERRO: Binding 'DB' não encontrado em nenhuma das estratégias (A, B, C).");
       return null;
     } catch (e) {
       console.error("[DB] Exceção crítica ao inicializar D1:", e);
@@ -135,7 +140,10 @@ export async function getUserProfile(matricula: string) {
 export async function saveUserProfile(matricula: string, data: any) {
   try {
     const db = await getDb();
-    if (!db) throw new Error("Database not available");
+    if (!db) {
+      console.error("[DB] Falha ao salvar perfil: Banco de dados não disponível.");
+      return { success: false, error: "Banco de dados não disponível" };
+    }
     const existing = await getUserProfile(matricula);
     if (existing) {
       await db.update(users).set(data).where(eq(users.matricula, matricula)).run();
@@ -144,8 +152,8 @@ export async function saveUserProfile(matricula: string, data: any) {
     }
     return { success: true };
   } catch (e: any) {
-    console.error("Error saving user profile:", e);
-    throw e;
+    console.error("[DB] Erro ao salvar perfil do usuário:", e);
+    return { success: false, error: e.message };
   }
 }
 
