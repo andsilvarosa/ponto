@@ -5,89 +5,72 @@ import { eq, and } from 'drizzle-orm';
 
 // Cache para as instâncias do banco
 let cachedDb: any = null;
-let initializationPromise: Promise<any> | null = null;
 
 async function getDb() {
   if (cachedDb) return cachedDb;
-  if (initializationPromise) return initializationPromise;
 
-  initializationPromise = (async () => {
-    const isProd = process.env.NODE_ENV === 'production';
-    const isEdge = process.env.NEXT_RUNTIME === 'edge' || (typeof EdgeRuntime !== 'undefined');
-    
-    console.log(`[DB] Inicializando conexão. Prod: ${isProd}, Edge: ${isEdge}, Runtime: ${process.env.NEXT_RUNTIME}`);
-    
-    // Tenta encontrar o binding do Cloudflare D1
-    let dbBinding: any = null;
-    
-    // Estratégia A: process.env.DB (Padrão Cloudflare)
-    if (process.env.DB) {
-      dbBinding = process.env.DB;
-      console.log("[DB] Estratégia A: Encontrado em process.env.DB");
-    }
-    
-    // Estratégia B: getRequestContext (Cloudflare next-on-pages)
-    if (!dbBinding) {
-      try {
-        const { getRequestContext } = await import('@cloudflare/next-on-pages');
-        const ctx = getRequestContext();
-        if (ctx?.env?.DB) {
-          dbBinding = ctx.env.DB;
-          console.log("[DB] Estratégia B: Encontrado via getRequestContext");
+  const isEdge = process.env.NEXT_RUNTIME === 'edge';
+  const isProd = process.env.NODE_ENV === 'production';
+
+  // 1. AMBIENTE CLOUDFLARE (EDGE) - PRODUÇÃO
+  if (isEdge || isProd) {
+    try {
+      console.log("[DB] Iniciando busca exaustiva de binding D1...");
+      
+      let dbBinding: any = null;
+
+      // Estratégia A: process.env.DB (Padrão Nodejs Compat)
+      if (typeof process !== 'undefined' && (process.env as any).DB) {
+        dbBinding = (process.env as any).DB;
+        console.log("[DB] Binding encontrado em process.env.DB");
+      }
+
+      // Estratégia B: getRequestContext (Padrão Cloudflare Pages)
+      if (!dbBinding) {
+        try {
+          const { getRequestContext } = await import('@cloudflare/next-on-pages');
+          const context = getRequestContext();
+          dbBinding = context?.env?.DB;
+          if (dbBinding) console.log("[DB] Binding encontrado em getRequestContext().env.DB");
+        } catch (e) {
+          console.log("[DB] getRequestContext não disponível ou falhou");
         }
-      } catch (e) {}
-    }
-    
-    // Estratégia C: globalThis.DB (Fallback comum em Workers)
-    if (!dbBinding && (globalThis as any).DB) {
-      dbBinding = (globalThis as any).DB;
-      console.log("[DB] Estratégia C: Encontrado em globalThis.DB");
-    }
+      }
 
-    // 1. SE ENCONTROU D1 (CLOUDFLARE)
-    if (dbBinding) {
-      console.log("[DB] Usando Cloudflare D1");
-      try {
+      // Estratégia C: Global env (Fallback extremo)
+      if (!dbBinding && typeof (globalThis as any).__env__ !== 'undefined') {
+        dbBinding = (globalThis as any).__env__?.DB;
+        if (dbBinding) console.log("[DB] Binding encontrado em globalThis.__env__.DB");
+      }
+
+      if (dbBinding) {
         const { drizzle: drizzleD1 } = await import('drizzle-orm/d1');
         cachedDb = drizzleD1(dbBinding);
         return cachedDb;
-      } catch (e) {
-        console.error("[DB] Erro ao inicializar D1:", e);
       }
-    }
-
-    // 2. FALLBACK PARA SQLITE (AI STUDIO / LOCAL)
-    if (isEdge) {
-      console.warn("[DB] Edge Runtime detectado. SQLite não disponível.");
+      
+      console.error("[DB] ERRO: Binding 'DB' não encontrado em nenhuma das estratégias (A, B, C).");
+      return null;
+    } catch (e) {
+      console.error("[DB] Exceção crítica ao inicializar D1:", e);
       return null;
     }
+  }
 
-    console.log(`[DB] Tentando fallback para SQLite local (local.db)`);
+  // 2. AMBIENTE DESENVOLVIMENTO / NODE.JS (AI Studio)
+  if (!isProd && !isEdge) {
     try {
+      // Usamos uma string dinâmica para o require para impedir que o Webpack tente resolver o módulo durante o build do Cloudflare
       const moduleName = 'better-sqlite3';
       const drizzleModuleName = 'drizzle-orm/better-sqlite3';
       
-      let Database;
-      let drizzleSqlite;
+      const Database = eval('require')(moduleName);
+      const { drizzle: drizzleSqlite } = eval('require')(drizzleModuleName);
       
-      try {
-        Database = eval('require')(moduleName);
-        const drizzleModule = eval('require')(drizzleModuleName);
-        drizzleSqlite = drizzleModule.drizzle;
-      } catch (requireError) {
-        if (!isEdge) {
-          console.error("[DB] Erro ao carregar módulos do SQLite.", requireError);
-        }
-        return null;
-      }
-      
-      const sqlite = new Database('local.db', { timeout: 10000 });
-      // sqlite.pragma('journal_mode = WAL'); // Removido temporariamente para evitar problemas de trava em alguns ambientes
-      sqlite.pragma('foreign_keys = ON');
-      
+      const sqlite = new Database('local.db');
       cachedDb = drizzleSqlite(sqlite);
       
-      // Inicialização das tabelas
+      // Inicialização básica das tabelas se não existirem (apenas local)
       sqlite.exec(`
         CREATE TABLE IF NOT EXISTS users (
           matricula TEXT PRIMARY KEY,
@@ -108,40 +91,34 @@ async function getDb() {
         );
         CREATE TABLE IF NOT EXISTS monthly_summaries (
           id TEXT PRIMARY KEY,
-          user_profile_id TEXT,
+          user_profile_id TEXT REFERENCES users(matricula) ON DELETE CASCADE,
           year INTEGER,
           month INTEGER,
-          scraped_at TEXT,
-          FOREIGN KEY(user_profile_id) REFERENCES users(matricula) ON DELETE CASCADE
+          scraped_at TEXT
         );
         CREATE TABLE IF NOT EXISTS daily_entries (
           id TEXT PRIMARY KEY,
-          monthly_point_summary_id TEXT,
-          user_profile_id TEXT,
+          monthly_point_summary_id TEXT REFERENCES monthly_summaries(id) ON DELETE CASCADE,
+          user_profile_id TEXT REFERENCES users(matricula) ON DELETE CASCADE,
           date TEXT,
           times TEXT,
           is_manual_dsr INTEGER DEFAULT 0,
           is_manual_work INTEGER DEFAULT 0,
           is_holiday INTEGER DEFAULT 0,
           is_compensation INTEGER DEFAULT 0,
-          is_bank_off INTEGER DEFAULT 0,
-          FOREIGN KEY(monthly_point_summary_id) REFERENCES monthly_summaries(id) ON DELETE CASCADE,
-          FOREIGN KEY(user_profile_id) REFERENCES users(matricula) ON DELETE CASCADE
+          is_bank_off INTEGER DEFAULT 0
         );
       `);
-      
       return cachedDb;
     } catch (e) {
-      console.error("[DB] Erro crítico ao inicializar SQLite:", e);
-      return null;
+      console.error("Erro ao inicializar SQLite local:", e);
     }
-  })();
+  }
 
-  return initializationPromise;
+  return null;
 }
 
 export async function getUserProfile(matricula: string) {
-  console.log(`[DB] getUserProfile chamado para: ${matricula}`);
   try {
     const db = await getDb();
     if (!db) {
@@ -151,7 +128,11 @@ export async function getUserProfile(matricula: string) {
     const result = await db.select().from(users).where(eq(users.matricula, matricula)).get();
     return result ? JSON.parse(JSON.stringify(result)) : null;
   } catch (e: any) {
-    console.error(`[DB] Erro em getUserProfile(${matricula}):`, e);
+    if (e?.message?.includes("no such table")) {
+      console.error(`[DB] ERRO CRÍTICO: A tabela 'users' não existe no banco D1. Execute as migrações.`);
+    } else {
+      console.error("[DB] Erro ao buscar perfil do usuário:", e);
+    }
     return null;
   }
 }
@@ -177,7 +158,6 @@ export async function saveUserProfile(matricula: string, data: any) {
 }
 
 export async function getMonthlyEntries(matricula: string, month: number, year: number) {
-  console.log(`[DB] getMonthlyEntries chamado para: ${matricula} (${month}/${year})`);
   try {
     const db = await getDb();
     if (!db) return [];
@@ -192,7 +172,7 @@ export async function getMonthlyEntries(matricula: string, month: number, year: 
       
     return entries ? JSON.parse(JSON.stringify(entries)) : [];
   } catch (e) {
-    console.error(`[DB] Erro em getMonthlyEntries(${matricula}):`, e);
+    console.error("Error fetching monthly entries:", e);
     return [];
   }
 }
@@ -206,17 +186,6 @@ export async function saveDailyEntriesBatch(matricula: string, month: number, ye
     }
     const mYear = `${year}-${month.toString().padStart(2, '0')}`;
     const summaryId = `${matricula}_${mYear}`;
-
-    // 0. Garantir que o usuário existe (Evita erro de Foreign Key)
-    const existingUser = await db.select().from(users).where(eq(users.matricula, matricula)).get();
-    if (!existingUser) {
-      console.log(`[DB] Criando perfil básico para ${matricula} antes de salvar lote.`);
-      await db.insert(users).values({ 
-        matricula, 
-        isAdmin: matricula === '000000',
-        updatedAt: new Date().toISOString() 
-      }).run();
-    }
 
     // Ensure summary exists
     const existingSummary = await db.select().from(monthlySummaries).where(eq(monthlySummaries.id, summaryId)).get();
@@ -271,17 +240,6 @@ export async function saveSingleEntry(matricula: string, month: number, year: nu
     const mYear = `${year}-${month.toString().padStart(2, '0')}`;
     const summaryId = `${matricula}_${mYear}`;
 
-    // 0. Garantir que o usuário existe (Evita erro de Foreign Key)
-    const existingUser = await db.select().from(users).where(eq(users.matricula, matricula)).get();
-    if (!existingUser) {
-      console.log(`[DB] Criando perfil básico para ${matricula} antes de salvar entrada única.`);
-      await db.insert(users).values({ 
-        matricula, 
-        isAdmin: matricula === '000000',
-        updatedAt: new Date().toISOString() 
-      }).run();
-    }
-
     // Ensure summary exists
     const existingSummary = await db.select().from(monthlySummaries).where(eq(monthlySummaries.id, summaryId)).get();
     if (!existingSummary) {
@@ -321,19 +279,6 @@ export async function getAllUsers() {
   } catch (e) {
     console.error("Error fetching all users:", e);
     return [];
-  }
-}
-
-export async function debugListUsers() {
-  try {
-    const db = await getDb();
-    if (!db) return { success: false, error: "DB not available" };
-    const allUsers = await db.select().from(users).all();
-    console.log(`[DEBUG] Total de usuários no banco: ${allUsers.length}`);
-    return { success: true, count: allUsers.length, users: allUsers.map((u: any) => u.matricula) };
-  } catch (e: any) {
-    console.error("[DEBUG] Erro ao listar usuários:", e);
-    return { success: false, error: e.message };
   }
 }
 

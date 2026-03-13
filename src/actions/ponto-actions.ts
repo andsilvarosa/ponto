@@ -1,6 +1,5 @@
 
 'use server';
-
 /**
  * Server Action que realiza a consulta COMPLETA do mês no portal.
  * Implementa a lógica de navegação ASP.NET AJAX para percorrer todos os dias.
@@ -135,19 +134,13 @@ export async function fetchMonthData(matricula: string, month: number, year: num
     };
 
     // 0. GET inicial
-    console.log(`[Fetch] Iniciando GET em ${TARGET_URL} para matrícula ${matricula}`);
+    console.log(`[Fetch] Iniciando GET em ${TARGET_URL}`);
     const responseGet = await fetch(TARGET_URL, {
       method: 'GET',
       headers: commonHeaders
     });
     
     let html = await responseGet.text();
-    console.log(`[Fetch] GET inicial concluído. Status: ${responseGet.status}, HTML size: ${html.length}`);
-    
-    if (html.includes("Matrícula não encontrada") || html.includes("erro") || html.includes("inválida")) {
-      console.warn("[Fetch] Alerta: HTML inicial contém mensagens de erro.");
-    }
-
     let cookies: string[] = [];
     if (typeof responseGet.headers.getSetCookie === 'function') {
       cookies = responseGet.headers.getSetCookie();
@@ -206,15 +199,6 @@ export async function fetchMonthData(matricula: string, month: number, year: num
 
     // --- EXTRAÇÃO DOS DIAS ---
     const { days: calendarArgs, selectedDay, calendarId } = extractCalendarData(html, month);
-    console.log(`[Fetch] Calendário extraído. Dias encontrados: ${Object.keys(calendarArgs).length}, Dia selecionado: ${selectedDay}`);
-    
-    if (Object.keys(calendarArgs).length === 0) {
-      console.warn("[Fetch] Nenhum dia encontrado no calendário! Verificando HTML...");
-      if (html.includes("txtMatricula")) {
-        console.log("[Fetch] Campo txtMatricula ainda presente. Tentando preencher...");
-      }
-    }
-
     const today = new Date();
     const isPastMonth = year < today.getFullYear() || (year === today.getFullYear() && month < (today.getMonth() + 1));
     const lastDayToFetch = isPastMonth ? 31 : today.getDate();

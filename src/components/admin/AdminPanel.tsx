@@ -46,16 +46,6 @@ export function AdminPanel({ onRefresh }: AdminPanelProps) {
       const currentMonth = now.getMonth() + 1;
       const currentYear = now.getFullYear();
 
-      const safeParse = (val: any, fallback: any) => {
-        if (!val) return fallback;
-        if (typeof val !== 'string') return val;
-        try {
-          return JSON.parse(val);
-        } catch (e) {
-          return fallback;
-        }
-      };
-
       const userList = await Promise.all(usersList.map(async (data: any) => {
         const matricula = data.matricula;
         let totalBalanceStr = "---";
@@ -74,7 +64,7 @@ export function AdminPanel({ onRefresh }: AdminPanelProps) {
             
             records.forEach((r: any) => {
               if (r.date === todayStr) return;
-              const times = safeParse(r.times, []);
+              const times = typeof r.times === 'string' ? JSON.parse(r.times) : (r.times || []);
               const sorted = sortPontoHours(times);
               const worked = calculateDailyWorkedMinutes(
                 sorted.filter((_: any, i: number) => i % 2 === 0),
@@ -84,8 +74,8 @@ export function AdminPanel({ onRefresh }: AdminPanelProps) {
               const dateObj = new Date(y, m-1, d);
               if (dateObj > now) return;
               
-              const fixedDsrDays = safeParse(data.fixedDsrDays, [0]);
-              const holidays = safeParse(data.holidays, []);
+              const fixedDsrDays = typeof data.fixedDsrDays === 'string' ? JSON.parse(data.fixedDsrDays) : (data.fixedDsrDays || [0]);
+              const holidays = typeof data.holidays === 'string' ? JSON.parse(data.holidays) : (data.holidays || []);
               
               const { isDsr, isHoliday } = isDateDsr(dateObj, fixedDsrDays, data.referenceDsrSunday, holidays);
               const isMetaZero = isDsr || isHoliday || r.isManualDsr || r.isHoliday || r.isBankOff || r.isCompensation;
@@ -132,24 +122,14 @@ export function AdminPanel({ onRefresh }: AdminPanelProps) {
     const dateStr = `${d.toString().padStart(2, '0')}/${m.toString().padStart(2, '0')}/${y}`;
     const dayId = dateStr.replace(/\//g, '-');
 
-    const safeParse = (val: any, fallback: any) => {
-      if (!val) return fallback;
-      if (typeof val !== 'string') return val;
-      try {
-        return JSON.parse(val);
-      } catch (e) {
-        return fallback;
-      }
-    };
-
     const results = await Promise.all(users.map(async (u) => {
       if (u.id === '000000') return null;
 
       const records = await getMonthlyEntries(u.id, m, y);
       const manualEntry = records.find((r: any) => r.id === `${u.id}_${dayId}`) || null;
 
-      const fixedDsrDays = safeParse(u.rawProfile.fixedDsrDays, [0]);
-      const holidays = safeParse(u.rawProfile.holidays, []);
+      const fixedDsrDays = typeof u.rawProfile.fixedDsrDays === 'string' ? JSON.parse(u.rawProfile.fixedDsrDays) : (u.rawProfile.fixedDsrDays || [0]);
+      const holidays = typeof u.rawProfile.holidays === 'string' ? JSON.parse(u.rawProfile.holidays) : (u.rawProfile.holidays || []);
 
       const { isDsr, isHoliday } = isDateDsr(dateObj, fixedDsrDays, u.rawProfile.referenceDsrSunday, holidays);
       const isManualFolga = manualEntry?.isManualDsr || manualEntry?.isBankOff || manualEntry?.isCompensation || (isHoliday && !manualEntry?.isManualWork);
