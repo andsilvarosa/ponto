@@ -1,9 +1,6 @@
 
 'use client';
 
-export const dynamic = 'force-dynamic';
-export const runtime = 'edge';
-
 import { useState, useEffect } from 'react';
 import { MatriculaInput } from '@/components/MatriculaInput';
 import { SummaryCards } from '@/components/dashboard/SummaryCards';
@@ -264,24 +261,37 @@ export default function Home() {
                   <h2 className="text-xl font-black text-foreground">#{matricula}</h2>
                 </div>
                 <Button onClick={async () => {
-                  if (!matricula || viewMonth === null || viewYear === null) return;
+                  if (!matricula || viewMonth === null || viewYear === null) {
+                    console.log("[Update] Missing data:", { matricula, viewMonth, viewYear });
+                    return;
+                  }
+                  console.log("[Update] Starting sync for:", matricula);
                   setIsLoading(true);
+                  const syncToast = toast({ title: "Sincronizando...", description: "Buscando dados no portal (isso pode levar alguns segundos).", duration: 10000 });
                   try {
                     const result = await fetchMonthData(matricula, viewMonth, viewYear);
+                    console.log("[Update] Result:", result.success ? "Success" : "Failed", result.error);
                     
                     if (!result.success) {
                       throw new Error(result.error);
                     }
 
                     const freshData = result.data;
-                    if (!freshData) return;
+                    if (!freshData) {
+                      console.log("[Update] No data returned");
+                      return;
+                    }
+                    console.log("[Update] Data received, normalizing...");
                     const normalizedData = normalizeNightShifts(freshData.map(d => ({ ...d, times: [...d.times] })));
                     
+                    console.log("[Update] Saving batch...");
                     await saveDailyEntriesBatch(matricula, viewMonth, viewYear, normalizedData);
 
+                    console.log("[Update] Reloading local data...");
                     await loadEmployeeData(matricula, viewMonth, viewYear);
                     toast({ title: "Portal sincronizado!" });
                   } catch (e: any) {
+                    console.error("[Update] Error:", e);
                     toast({ variant: "destructive", title: "Erro na sincronização", description: e.message || "Portal lento ou fora do ar." });
                   } finally {
                     setIsLoading(false);
