@@ -34,12 +34,14 @@ async function getDb() {
   }
 
   // 2. AMBIENTE DESENVOLVIMENTO / NODE.JS (AI Studio)
-  // Usamos eval('require') para esconder COMPLETAMENTE do Webpack/Bundler
-  if (typeof process !== 'undefined' && process.env.NEXT_RUNTIME !== 'edge') {
+  if (process.env.NEXT_RUNTIME !== 'edge') {
     try {
-      const req = eval('require');
-      const { drizzle: drizzleSqlite } = req('drizzle-orm/better-sqlite3');
-      const Database = req('better-sqlite3');
+      // Usamos uma string dinâmica para o require para impedir que o Webpack tente resolver o módulo durante o build do Cloudflare
+      const moduleName = 'better-sqlite3';
+      const drizzleModuleName = 'drizzle-orm/better-sqlite3';
+      
+      const Database = eval('require')(moduleName);
+      const { drizzle: drizzleSqlite } = eval('require')(drizzleModuleName);
       
       const sqlite = new Database('local.db');
       cachedDb = drizzleSqlite(sqlite);
