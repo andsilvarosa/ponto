@@ -1,6 +1,9 @@
 
 'use client';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'edge';
+
 import { useState, useEffect } from 'react';
 import { MatriculaInput } from '@/components/MatriculaInput';
 import { SummaryCards } from '@/components/dashboard/SummaryCards';
@@ -265,7 +268,7 @@ export default function Home() {
                     console.log("[Update] Missing data:", { matricula, viewMonth, viewYear });
                     return;
                   }
-                  console.log("[Update] Starting sync for:", matricula);
+                  console.log("[Update] Starting sync for:", matricula, "(Action Sync v2)");
                   setIsLoading(true);
                   const syncToast = toast({ title: "Sincronizando...", description: "Buscando dados no portal (isso pode levar alguns segundos).", duration: 10000 });
                   try {
