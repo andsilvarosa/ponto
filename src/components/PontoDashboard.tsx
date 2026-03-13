@@ -107,6 +107,16 @@ export default function PontoDashboard() {
         }
       }
 
+      const parseJson = (val: any, fallback: any) => {
+        if (!val) return fallback;
+        if (typeof val !== 'string') return val;
+        try {
+          return JSON.parse(val);
+        } catch (e) {
+          return fallback;
+        }
+      };
+
       setEmployeeData({
         id: m,
         matricula: m,
@@ -115,10 +125,10 @@ export default function PontoDashboard() {
         previousBalanceYear: base?.previousBalanceYear,
         balanceAdjustment: base?.balanceAdjustment || '00:00',
         previousHolidayBalance: base?.previousHolidayBalance || 0,
-        fixedDsrDays: base?.fixedDsrDays ? JSON.parse(base.fixedDsrDays) : [0],
+        fixedDsrDays: parseJson(base?.fixedDsrDays, [0]),
         referenceDsrSunday: base?.referenceDsrSunday,
         dailyWorkload: base?.dailyWorkload || 440,
-        holidays: base?.holidays ? JSON.parse(base.holidays) : [],
+        holidays: parseJson(base?.holidays, []),
         lastFetch: base?.updatedAt || new Date().toISOString(),
         dailyRecords: fullMonthRecords,
         isAdmin: base?.isAdmin || m === '000000',
@@ -320,18 +330,18 @@ export default function PontoDashboard() {
           />
 
           <DsrSettingsDialog 
-            open={showDsrDialog}
-            onOpenChange={setShowDsrDialog}
+            isOpen={showDsrDialog}
             fixedDsrDays={employeeData.fixedDsrDays}
-            referenceDsrSunday={employeeData.referenceDsrSunday}
+            referenceSunday={employeeData.referenceDsrSunday || null}
             dailyWorkload={employeeData.dailyWorkload}
             holidays={employeeData.holidays}
+            onClose={() => setShowDsrDialog(false)}
             onSave={async (days, ref, workload, hols) => {
               await saveUserProfile(matricula, { 
-                fixedDsrDays: JSON.stringify(days), 
+                fixedDsrDays: days, 
                 referenceDsrSunday: ref,
                 dailyWorkload: workload,
-                holidays: JSON.stringify(hols),
+                holidays: hols,
                 updatedAt: new Date().toISOString() 
               });
               if (viewMonth && viewYear) loadEmployeeData(matricula, viewMonth, viewYear);
