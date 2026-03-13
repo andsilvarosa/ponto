@@ -57,9 +57,6 @@ export function SummaryCards({
     today.setHours(0,0,0,0);
 
     records.forEach(record => {
-      // Regra: Não calcula o saldo do dia atual para não afetar o banco de horas enquanto o usuário trabalha
-      if (record.date === todayStr) return;
-
       const [day, month, year] = record.date.split('/').map(Number);
       const dateObj = new Date(year, month - 1, day);
 

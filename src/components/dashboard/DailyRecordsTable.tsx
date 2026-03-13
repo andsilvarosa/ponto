@@ -59,7 +59,7 @@ export function DailyRecordsTable({
                     <li>Hora Extra = Trabalhado - Meta (ex: 07:20).</li>
                     <li>Em Folgas/DSR/Feriados sem batidas, o saldo é 0.</li>
                     <li>🌙 Indica bônus noturno já somado ao total.</li>
-                    <li>Hoje: O saldo de hoje não conta no banco até amanhã.</li>
+                    <li>Hoje: O saldo de hoje é exibido em tempo real.</li>
                     <li>Futuro: Dias futuros não descontam horas da meta.</li>
                   </ul>
                 </TooltipContent>
@@ -109,12 +109,10 @@ export function DailyRecordsTable({
                 
                 const goalForDay = isMetaZeroDay ? 0 : dailyWorkload;
                 
-                // Saldo: 0 para futuro ou hoje (se não terminou)
+                // Saldo: 0 para futuro
                 const isCalculated = workedMinutes > 0 || isMetaZeroDay;
                 let dailyBalance = 0;
                 if (isFuture) {
-                  dailyBalance = 0;
-                } else if (isToday && workedMinutes < goalForDay) {
                   dailyBalance = 0;
                 } else {
                   dailyBalance = isCalculated ? workedMinutes - goalForDay : -dailyWorkload;
@@ -196,13 +194,13 @@ export function DailyRecordsTable({
                     <TableCell className="text-right font-black text-base tabular-nums border-l bg-primary/5">
                       <span className={cn(
                         "px-2 py-0.5 rounded",
-                        (isToday && dailyBalance === 0) || isFuture ? "text-muted-foreground bg-muted" : (
+                        isFuture ? "text-muted-foreground bg-muted" : (
                           dailyBalance >= 0 
                             ? "text-green-700 bg-green-500/10 dark:text-green-400" 
                             : "text-red-700 bg-red-500/10 dark:text-red-400"
                         )
                       )}>
-                        {isFuture ? "--:--" : (isToday && dailyBalance === 0 ? "--:--" : minutesToTime(dailyBalance, true))}
+                        {isFuture ? "--:--" : minutesToTime(dailyBalance, true)}
                       </span>
                     </TableCell>
                     <TableCell className="text-center">
