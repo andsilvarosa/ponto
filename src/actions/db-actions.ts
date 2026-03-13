@@ -1,45 +1,40 @@
 'use server';
 
-import { getRequestContext } from '@cloudflare/next-on-pages';
-import { drizzle } from 'drizzle-orm/d1';
 import { users, monthlySummaries, dailyEntries } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 
-// Variável para cache do banco local (apenas dev)
-let cachedLocalDb: any = null;
+// Cache para as instâncias do banco
+let cachedDb: any = null;
 
 async function getDb() {
-  // 1. Tentar contexto do Cloudflare (Produção/Preview no Cloudflare)
-  try {
-    const context = getRequestContext();
-    if (context?.env?.DB) {
-      return drizzle(context.env.DB);
+  if (cachedDb) return cachedDb;
+
+  // 1. AMBIENTE CLOUDFLARE (EDGE)
+  if (process.env.NEXT_RUNTIME === 'edge') {
+    try {
+      // Importações dinâmicas para não poluir o ambiente Node.js
+      const { getRequestContext } = await import('@cloudflare/next-on-pages');
+      const { drizzle: drizzleD1 } = await import('drizzle-orm/d1');
+      
+      const context = getRequestContext();
+      if (context?.env?.DB) {
+        cachedDb = drizzleD1(context.env.DB);
+        return cachedDb;
+      }
+    } catch (e) {
+      console.error("Erro ao inicializar D1 no Cloudflare:", e);
     }
-  } catch (e) {
-    // Não estamos no ambiente Edge do Cloudflare ou context não disponível
   }
 
-  // 2. Tentar variável global (Alguns ambientes de emulação)
-  const globalEnv = globalThis as any;
-  if (globalEnv.DB || (typeof process !== 'undefined' && (process.env as any).DB)) {
-    const dbBinding = globalEnv.DB || (process.env as any).DB;
-    if (dbBinding && typeof dbBinding.prepare === 'function') {
-      return drizzle(dbBinding);
-    }
-  }
-
-  // 3. Fallback para Desenvolvimento Local (AI Studio / Node.js)
-  // IMPORTANTE: Este bloco NUNCA deve ser executado no Cloudflare Edge
-  if (process.env.NODE_ENV !== 'production' && typeof process !== 'undefined' && process.env.NEXT_RUNTIME !== 'edge') {
-    if (cachedLocalDb) return cachedLocalDb;
-
+  // 2. AMBIENTE DESENVOLVIMENTO / NODE.JS (AI Studio)
+  if (process.env.NODE_ENV !== 'production' || process.env.NEXT_RUNTIME !== 'edge') {
     try {
       // Usamos import dinâmico para evitar que o bundler do Cloudflare tente processar isso
       const { drizzle: drizzleSqlite } = await import('drizzle-orm/better-sqlite3');
       const Database = (await import('better-sqlite3')).default;
       
       const sqlite = new Database('local.db');
-      cachedLocalDb = drizzleSqlite(sqlite);
+      cachedDb = drizzleSqlite(sqlite);
       
       // Inicialização básica das tabelas se não existirem
       sqlite.exec(`
@@ -80,13 +75,12 @@ async function getDb() {
           is_bank_off INTEGER DEFAULT 0
         );
       `);
-      return cachedLocalDb;
+      return cachedDb;
     } catch (e) {
       console.error("Erro ao inicializar SQLite local:", e);
     }
   }
 
-  console.error("ERRO CRÍTICO: Banco de dados não disponível. Verifique o binding 'DB' no Cloudflare.");
   return null;
 }
 
