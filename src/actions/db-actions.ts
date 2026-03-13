@@ -9,8 +9,8 @@ let cachedDb: any = null;
 async function getDb() {
   if (cachedDb) return cachedDb;
 
-  // 1. AMBIENTE CLOUDFLARE (EDGE)
-  if (process.env.NEXT_RUNTIME === 'edge') {
+  // 1. AMBIENTE CLOUDFLARE (EDGE) - PRODUÇÃO
+  if (process.env.NEXT_RUNTIME === 'edge' || process.env.NODE_ENV === 'production') {
     try {
       // Importações dinâmicas para não poluir o ambiente Node.js
       const { getRequestContext } = await import('@cloudflare/next-on-pages');
@@ -21,22 +21,30 @@ async function getDb() {
         cachedDb = drizzleD1(context.env.DB);
         return cachedDb;
       }
+      
+      // Se estivermos no Edge mas sem o binding DB, não podemos continuar para o SQLite
+      if (process.env.NEXT_RUNTIME === 'edge') {
+        console.error("D1 Binding 'DB' not found in Edge runtime");
+        return null;
+      }
     } catch (e) {
       console.error("Erro ao inicializar D1 no Cloudflare:", e);
+      if (process.env.NEXT_RUNTIME === 'edge') return null;
     }
   }
 
   // 2. AMBIENTE DESENVOLVIMENTO / NODE.JS (AI Studio)
-  if (process.env.NODE_ENV !== 'production' || process.env.NEXT_RUNTIME !== 'edge') {
+  // Usamos eval('require') para esconder COMPLETAMENTE do Webpack/Bundler
+  if (typeof process !== 'undefined' && process.env.NEXT_RUNTIME !== 'edge') {
     try {
-      // Usamos import dinâmico para evitar que o bundler do Cloudflare tente processar isso
-      const { drizzle: drizzleSqlite } = await import('drizzle-orm/better-sqlite3');
-      const Database = (await import('better-sqlite3')).default;
+      const req = eval('require');
+      const { drizzle: drizzleSqlite } = req('drizzle-orm/better-sqlite3');
+      const Database = req('better-sqlite3');
       
       const sqlite = new Database('local.db');
       cachedDb = drizzleSqlite(sqlite);
       
-      // Inicialização básica das tabelas se não existirem
+      // Inicialização básica das tabelas se não existirem (apenas local)
       sqlite.exec(`
         CREATE TABLE IF NOT EXISTS users (
           matricula TEXT PRIMARY KEY,
