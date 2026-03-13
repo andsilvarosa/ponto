@@ -14,15 +14,37 @@ async function getDb() {
   
   // Tenta encontrar o binding do Cloudflare D1
   let dbBinding: any = null;
-  if (isEdge || isProd) {
-    if (process.env.DB) dbBinding = process.env.DB;
-    if (!dbBinding) {
-      try {
-        const { getRequestContext } = await import('@cloudflare/next-on-pages');
-        dbBinding = getRequestContext()?.env?.DB;
-      } catch (e) {}
+  
+  // Estratégia A: process.env.DB (Padrão Cloudflare)
+  if (process.env.DB) {
+    dbBinding = process.env.DB;
+    console.log("[DB] Estratégia A: Encontrado em process.env.DB");
+  }
+  
+  // Estratégia B: getRequestContext (Cloudflare next-on-pages)
+  if (!dbBinding) {
+    try {
+      const { getRequestContext } = await import('@cloudflare/next-on-pages');
+      const ctx = getRequestContext();
+      if (ctx?.env?.DB) {
+        dbBinding = ctx.env.DB;
+        console.log("[DB] Estratégia B: Encontrado via getRequestContext");
+      } else {
+        console.log("[DB] Estratégia B: getRequestContext disponível mas env.DB não encontrado");
+      }
+    } catch (e) {
+      // console.log("[DB] Estratégia B: getRequestContext falhou ou não disponível");
     }
-    if (!dbBinding && (globalThis as any).DB) dbBinding = (globalThis as any).DB;
+  }
+  
+  // Estratégia C: globalThis.DB (Fallback comum em Workers)
+  if (!dbBinding && (globalThis as any).DB) {
+    dbBinding = (globalThis as any).DB;
+    console.log("[DB] Estratégia C: Encontrado em globalThis.DB");
+  }
+
+  if (!dbBinding && isProd) {
+    console.error("[DB] ERRO: Binding 'DB' não encontrado em nenhuma das estratégias (A, B, C) em produção.");
   }
 
   // 1. SE ENCONTROU D1 (CLOUDFLARE)
