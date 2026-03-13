@@ -180,7 +180,10 @@ export async function getMonthlyEntries(matricula: string, month: number, year: 
 export async function saveDailyEntriesBatch(matricula: string, month: number, year: number, entries: any[]) {
   try {
     const db = await getDb();
-    if (!db) throw new Error("Database not available");
+    if (!db) {
+      console.error("[DB] Falha ao salvar lote de entradas: Banco de dados não disponível.");
+      return { success: false, error: "Banco de dados não disponível" };
+    }
     const mYear = `${year}-${month.toString().padStart(2, '0')}`;
     const summaryId = `${matricula}_${mYear}`;
 
@@ -221,15 +224,18 @@ export async function saveDailyEntriesBatch(matricula: string, month: number, ye
     }
     return { success: true };
   } catch (e: any) {
-    console.error("Error saving daily entries batch:", e);
-    throw e;
+    console.error("[DB] Erro ao salvar lote de entradas diárias:", e);
+    return { success: false, error: e.message };
   }
 }
 
 export async function saveSingleEntry(matricula: string, month: number, year: number, entryId: string, data: any) {
   try {
     const db = await getDb();
-    if (!db) throw new Error("Database not available");
+    if (!db) {
+      console.error("[DB] Falha ao salvar entrada única: Banco de dados não disponível.");
+      return { success: false, error: "Banco de dados não disponível" };
+    }
     const fullEntryId = `${matricula}_${entryId}`;
     const mYear = `${year}-${month.toString().padStart(2, '0')}`;
     const summaryId = `${matricula}_${mYear}`;
@@ -259,8 +265,8 @@ export async function saveSingleEntry(matricula: string, month: number, year: nu
     }
     return { success: true };
   } catch (e: any) {
-    console.error("Error saving single entry:", e);
-    throw e;
+    console.error("[DB] Erro ao salvar entrada única:", e);
+    return { success: false, error: e.message };
   }
 }
 
@@ -278,14 +284,19 @@ export async function getAllUsers() {
 export async function resetUserAuthVersion(matricula: string) {
   try {
     const db = await getDb();
-    if (!db) throw new Error("Database not available");
+    if (!db) {
+      console.error("[DB] Falha ao resetar versão de auth: Banco de dados não disponível.");
+      return { success: false, error: "Banco de dados não disponível" };
+    }
     const user = await getUserProfile(matricula);
-    if (!user) throw new Error("User not found");
+    if (!user) {
+      return { success: false, error: "Usuário não encontrado" };
+    }
     const newVersion = (user.authVersion || 0) + 1;
     await db.update(users).set({ authVersion: newVersion, uid: null, updatedAt: new Date().toISOString() }).where(eq(users.matricula, matricula)).run();
     return { success: true };
   } catch (e: any) {
-    console.error("Error resetting user auth version:", e);
-    throw e;
+    console.error("[DB] Erro ao resetar versão de auth:", e);
+    return { success: false, error: e.message };
   }
 }
