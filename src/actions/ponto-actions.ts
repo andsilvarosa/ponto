@@ -78,24 +78,46 @@ function extractTimesFromGrid(html: string): string[] {
   return finalTimes.filter((t, i) => t !== finalTimes[i - 1]);
 }
 
-function extractCalendarArguments(html: string, targetMonth: number): Record<number, string> {
-  const map: Record<number, string> = {};
-  // Regex mais flexível para o título do calendário
-  const linkRegex = /href="javascript:__doPostBack\('Calendar','(\d+)'\)"[^>]*?title="[^"]*?(\d+)\s+de\s+([^"]+)"/gi;
-  let match;
+function extractCalendarData(html: string, targetMonth: number): { days: Record<number, string>, selectedDay: number | null, calendarId: string } {
+  const days: Record<number, string> = {};
+  let selectedDay: number | null = null;
+  let calendarId = 'Calendar'; // Default
+
   const monthNames = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
   const targetMonthName = monthNames[targetMonth - 1];
 
+  // 1. Busca links de dias: href="javascript:__doPostBack('ID','ARG')" title="DIA de MES"
+  const linkRegex = /href="javascript:__doPostBack\('([^']+)','(\d+)'\)"[^>]*?title="[^"]*?(\d+)\s+de\s+([^"]+)"/gi;
+  let match;
   while ((match = linkRegex.exec(html)) !== null) {
-    const arg = match[1];
-    const day = parseInt(match[2]);
-    const monthStr = match[3].toLowerCase();
+    const id = match[1];
+    const arg = match[2];
+    const day = parseInt(match[3]);
+    const monthStr = match[4].toLowerCase();
     
+    calendarId = id; // Assume o ID do primeiro link encontrado
     if (monthStr.includes(targetMonthName)) {
-      map[day] = arg;
+      days[day] = arg;
     }
   }
-  return map;
+
+  // 2. Busca o dia selecionado (que não tem link)
+  // Geralmente é um <td> com estilo diferente ou um <span> dentro de um <td>
+  // Tentamos encontrar o dia que está no calendário mas não é link
+  const allDaysRegex = />\s*(\d{1,2})\s*<\/td>/gi;
+  while ((match = allDaysRegex.exec(html)) !== null) {
+    const day = parseInt(match[1]);
+    if (day >= 1 && day <= 31 && !days[day]) {
+      // Se o dia está no HTML mas não é link, e estamos no mês certo, provavelmente é o selecionado
+      // Verificamos se o contexto ao redor sugere que é o dia selecionado (ex: cor de fundo)
+      const context = html.substring(match.index - 100, match.index + 100);
+      if (context.toLowerCase().includes('background-color') || context.toLowerCase().includes('selected') || context.toLowerCase().includes('font-weight:bold')) {
+          selectedDay = day;
+      }
+    }
+  }
+
+  return { days, selectedDay, calendarId };
 }
 
 export async function fetchMonthData(matricula: string, month: number, year: number) {
@@ -111,26 +133,14 @@ export async function fetchMonthData(matricula: string, month: number, year: num
       'Referer': TARGET_URL,
     };
 
-    // 0. GET inicial para pegar VIEWSTATE e Cookies
+    // 0. GET inicial
     console.log(`[Fetch] Iniciando GET em ${TARGET_URL}`);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
     const responseGet = await fetch(TARGET_URL, {
       method: 'GET',
-      headers: commonHeaders,
-      signal: controller.signal
+      headers: commonHeaders
     });
-    clearTimeout(timeoutId);
     
-    if (!responseGet.ok) {
-      console.error(`[Fetch] Erro no GET inicial: ${responseGet.status}`);
-      throw new Error(`Portal indisponível (Status ${responseGet.status})`);
-    }
-
     let html = await responseGet.text();
-    
-    // Fallback para getSetCookie se não existir
     let cookies: string[] = [];
     if (typeof responseGet.headers.getSetCookie === 'function') {
       cookies = responseGet.headers.getSetCookie();
@@ -139,33 +149,25 @@ export async function fetchMonthData(matricula: string, month: number, year: num
       if (setCookie) cookies = [setCookie];
     }
     
-    console.log(`[Fetch] Cookies obtidos: ${cookies.length}`);
     let hiddenFields = updateFields(html, {});
 
-    // --- LÓGICA DE NAVEGAÇÃO DE MÊS ---
-    // Verifica se o mês exibido no portal é o mês solicitado
+    // --- NAVEGAÇÃO DE MÊS ---
     const monthNames = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
     const targetMonthName = monthNames[month - 1];
     const targetYearStr = year.toString();
 
-    // Tenta encontrar o título do calendário (ex: "março de 2024")
     const calendarTitleRegex = /<td[^>]*?>\s*([a-zç]+)\s+de\s+(\d{4})\s*<\/td>/gi;
     let titleMatch = calendarTitleRegex.exec(html);
     let currentMonthName = titleMatch ? titleMatch[1].toLowerCase() : "";
     let currentYearStr = titleMatch ? titleMatch[2] : "";
 
-    console.log(`[Fetch] Mês no portal: ${currentMonthName} ${currentYearStr} | Alvo: ${targetMonthName} ${targetYearStr}`);
-
-    // Se o mês não bater, tenta navegar (máximo 12 tentativas para evitar loop infinito)
     let navAttempts = 0;
     while ((currentMonthName !== targetMonthName || currentYearStr !== targetYearStr) && navAttempts < 12) {
       navAttempts++;
-      console.log(`[Fetch] Navegando mês... Tentativa ${navAttempts}`);
-
       const currentMonthIdx = monthNames.indexOf(currentMonthName);
       const targetMonthIdx = monthNames.indexOf(targetMonthName);
       
-      let navTarget = 'V4321'; // Default Prev
+      let navTarget = 'V4321'; // Prev
       if (year > parseInt(currentYearStr) || (year === parseInt(currentYearStr) && targetMonthIdx > currentMonthIdx)) {
         navTarget = 'V4322'; // Next
       }
@@ -179,102 +181,75 @@ export async function fetchMonthData(matricula: string, month: number, year: num
 
       const respNav = await fetch(TARGET_URL, {
         method: 'POST',
-        headers: { 
-          ...commonHeaders,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Cookie': cookies.join('; '),
-          'X-MicrosoftAjax': 'Delta=true',
-        },
+        headers: { ...commonHeaders, 'Content-Type': 'application/x-www-form-urlencoded', 'Cookie': cookies.join('; '), 'X-MicrosoftAjax': 'Delta=true' },
         body: bodyNav.toString()
       });
 
       const deltaHtmlNav = await respNav.text();
-      html = deltaHtmlNav; // Atualiza o HTML para a próxima iteração
+      html = deltaHtmlNav;
       hiddenFields = updateFields(deltaHtmlNav, hiddenFields);
       
-      let navCookies: string[] = [];
-      if (typeof respNav.headers.getSetCookie === 'function') {
-        navCookies = respNav.headers.getSetCookie();
-      } else {
-        const setCookie = respNav.headers.get('set-cookie');
-        if (setCookie) navCookies = [setCookie];
-      }
-      if (navCookies.length > 0) cookies = navCookies;
-
-      // Re-checa o título
       calendarTitleRegex.lastIndex = 0;
       titleMatch = calendarTitleRegex.exec(deltaHtmlNav);
       if (titleMatch) {
         currentMonthName = titleMatch[1].toLowerCase();
         currentYearStr = titleMatch[2];
-      } else {
-        // Se não achou o título no Delta, tenta extrair do conteúdo
-        const titleFallbackRegex = /\|content\|([^|]*?([a-zç]+)\s+de\s+(\d{4})[^|]*?)\|/gi;
-        const fallbackMatch = titleFallbackRegex.exec(deltaHtmlNav);
-        if (fallbackMatch) {
-          currentMonthName = fallbackMatch[2].toLowerCase();
-          currentYearStr = fallbackMatch[3];
-        }
       }
-      console.log(`[Fetch] Agora no portal: ${currentMonthName} ${currentYearStr}`);
     }
 
-    const calendarArgs = extractCalendarArguments(html, month);
-    const daysToFetch = Object.keys(calendarArgs).map(Number).sort((a, b) => a - b);
-
-    if (daysToFetch.length === 0) {
-      console.warn("[Fetch] Calendário não encontrado no HTML após navegação");
-      throw new Error("Não foi possível localizar o calendário para o mês solicitado.");
-    }
-
+    // --- EXTRAÇÃO DOS DIAS ---
+    const { days: calendarArgs, selectedDay, calendarId } = extractCalendarData(html, month);
     const today = new Date();
     const isPastMonth = year < today.getFullYear() || (year === today.getFullYear() && month < (today.getMonth() + 1));
     const lastDayToFetch = isPastMonth ? 31 : today.getDate();
 
-    console.log(`[Fetch] Dias para buscar: ${daysToFetch.length}, Limite: ${lastDayToFetch}`);
+    // Se o dia selecionado for um dos que queremos, já extraímos os dados dele
+    if (selectedDay && selectedDay <= lastDayToFetch) {
+      console.log(`[Fetch] Dia ${selectedDay} já está selecionado. Extraindo...`);
+      // Clica em consultar para garantir que a grid está atualizada para o dia selecionado
+      const bodyConsultar = new URLSearchParams();
+      Object.entries(hiddenFields).forEach(([k, v]) => bodyConsultar.append(k, v));
+      bodyConsultar.set('__EVENTTARGET', 'btnConsultar');
+      bodyConsultar.set('txtMatricula', matricula);
+      bodyConsultar.set('ScriptManager1', 'UpdatePanel1|btnConsultar');
 
-    // Loop por todos os dias do mês
+      const respFinal = await fetch(TARGET_URL, {
+        method: 'POST',
+        headers: { ...commonHeaders, 'Content-Type': 'application/x-www-form-urlencoded', 'Cookie': cookies.join('; '), 'X-MicrosoftAjax': 'Delta=true' },
+        body: bodyConsultar.toString()
+      });
+      const deltaHtmlFinal = await respFinal.text();
+      const times = extractTimesFromGrid(deltaHtmlFinal);
+      if (times.length > 0) {
+        results.push({ date: `${selectedDay.toString().padStart(2, '0')}/${month.toString().padStart(2, '0')}/${year}`, times });
+      }
+      hiddenFields = updateFields(deltaHtmlFinal, hiddenFields);
+    }
+
+    // Loop pelos outros dias
+    const daysToFetch = Object.keys(calendarArgs).map(Number).sort((a, b) => a - b);
     for (const day of daysToFetch) {
-      if (day > lastDayToFetch) break;
+      if (day > lastDayToFetch || day === selectedDay) continue;
 
-      console.log(`[Fetch] Buscando dia ${day}...`);
+      console.log(`[Fetch] Navegando para dia ${day}...`);
       const dayArg = calendarArgs[day];
       
       // PASSO 1: Selecionar o dia
       const bodyDay = new URLSearchParams();
       Object.entries(hiddenFields).forEach(([k, v]) => bodyDay.append(k, v));
-      bodyDay.set('__EVENTTARGET', 'Calendar');
+      bodyDay.set('__EVENTTARGET', calendarId);
       bodyDay.set('__EVENTARGUMENT', dayArg);
       bodyDay.set('txtMatricula', matricula);
-      bodyDay.set('ScriptManager1', 'UpdatePanel1|Calendar');
-
-      const controllerDay = new AbortController();
-      const timeoutDay = setTimeout(() => controllerDay.abort(), 15000);
+      bodyDay.set('ScriptManager1', `UpdatePanel1|${calendarId}`);
 
       const respDay = await fetch(TARGET_URL, {
         method: 'POST',
-        headers: { 
-          ...commonHeaders,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Cookie': cookies.join('; '),
-          'X-MicrosoftAjax': 'Delta=true',
-        },
-        body: bodyDay.toString(),
-        signal: controllerDay.signal
+        headers: { ...commonHeaders, 'Content-Type': 'application/x-www-form-urlencoded', 'Cookie': cookies.join('; '), 'X-MicrosoftAjax': 'Delta=true' },
+        body: bodyDay.toString()
       });
-      clearTimeout(timeoutDay);
       
       const deltaHtmlDay = await respDay.text();
       hiddenFields = updateFields(deltaHtmlDay, hiddenFields);
-      
-      let newCookies: string[] = [];
-      if (typeof respDay.headers.getSetCookie === 'function') {
-        newCookies = respDay.headers.getSetCookie();
-      } else {
-        const setCookie = respDay.headers.get('set-cookie');
-        if (setCookie) newCookies = [setCookie];
-      }
-      if (newCookies.length > 0) cookies = newCookies;
 
       // PASSO 2: Consultar horários
       const bodyConsultar = new URLSearchParams();
@@ -283,21 +258,11 @@ export async function fetchMonthData(matricula: string, month: number, year: num
       bodyConsultar.set('txtMatricula', matricula);
       bodyConsultar.set('ScriptManager1', 'UpdatePanel1|btnConsultar');
 
-      const controllerFinal = new AbortController();
-      const timeoutFinal = setTimeout(() => controllerFinal.abort(), 15000);
-
       const respFinal = await fetch(TARGET_URL, {
         method: 'POST',
-        headers: { 
-          ...commonHeaders,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Cookie': cookies.join('; '),
-          'X-MicrosoftAjax': 'Delta=true',
-        },
-        body: bodyConsultar.toString(),
-        signal: controllerFinal.signal
+        headers: { ...commonHeaders, 'Content-Type': 'application/x-www-form-urlencoded', 'Cookie': cookies.join('; '), 'X-MicrosoftAjax': 'Delta=true' },
+        body: bodyConsultar.toString()
       });
-      clearTimeout(timeoutFinal);
       
       const deltaHtmlFinal = await respFinal.text();
       const times = extractTimesFromGrid(deltaHtmlFinal);
@@ -314,16 +279,7 @@ export async function fetchMonthData(matricula: string, month: number, year: num
     }
 
     console.log(`[Fetch] Finalizado. Total de dias com dados: ${results.length}`);
-    
-    if (results.length === 0 && daysToFetch.length > 0) {
-      console.warn("[Fetch] Nenhum horário extraído, embora o calendário tenha sido encontrado.");
-      return { 
-        success: false, 
-        error: "O calendário foi localizado, mas nenhum horário foi extraído. Verifique se há marcações no portal para este período." 
-      };
-    }
-
-    return { success: true, data: results };
+    return { success: true, data: results.sort((a, b) => a.date.localeCompare(b.date)) };
   } catch (error: any) {
     console.error("Erro na extração:", error);
     return { success: false, error: error.message || "Falha de comunicação com o portal." };
