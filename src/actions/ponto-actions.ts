@@ -1,5 +1,6 @@
 
 'use server';
+
 /**
  * Server Action que realiza a consulta COMPLETA do mês no portal.
  * Implementa a lógica de navegação ASP.NET AJAX para percorrer todos os dias.
