@@ -82,7 +82,9 @@ async function getDb() {
       const drizzleModule = eval('require')(drizzleModuleName);
       drizzleSqlite = drizzleModule.drizzle;
     } catch (requireError) {
-      console.error("[DB] Erro ao carregar módulos do SQLite (better-sqlite3). Certifique-se de que está em um ambiente Node.js.", requireError);
+      if (!isEdge) {
+        console.error("[DB] Erro ao carregar módulos do SQLite (better-sqlite3). Certifique-se de que está em um ambiente Node.js.", requireError);
+      }
       return null;
     }
     
