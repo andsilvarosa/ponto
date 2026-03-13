@@ -147,6 +147,8 @@ export async function fetchMonthData(matricula: string, month: number, year: num
     if (html.includes("Matrícula não encontrada") || html.includes("erro") || html.includes("inválida")) {
       console.warn("[Fetch] Alerta: HTML inicial contém mensagens de erro.");
     }
+
+    let cookies: string[] = [];
     if (typeof responseGet.headers.getSetCookie === 'function') {
       cookies = responseGet.headers.getSetCookie();
     } else {
