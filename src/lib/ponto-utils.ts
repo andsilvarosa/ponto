@@ -66,7 +66,7 @@ export function isDateDsr(
   const dayOfWeek = date.getDay();
   const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
   
-  const isHoliday = NATIONAL_HOLIDAYS.includes(dateStr) || holidays.includes(dateStr);
+  const isHoliday = NATIONAL_HOLIDAYS.includes(dateStr) || (holidays || []).includes(dateStr);
 
   let isSundayDsr = false;
   if (dayOfWeek === 0 && referenceSunday) {
@@ -77,10 +77,10 @@ export function isDateDsr(
     const diffInWeeks = Math.floor((currentDate.getTime() - refDate.getTime()) / (1000 * 3600 * 24 * 7));
     isSundayDsr = diffInWeeks % 3 === 0;
   } else if (dayOfWeek === 0) {
-    isSundayDsr = fixedDsrDays.includes(0);
+    isSundayDsr = (fixedDsrDays || []).includes(0);
   }
 
-  const isDsr = isSundayDsr || (fixedDsrDays.includes(dayOfWeek) && dayOfWeek !== 0);
+  const isDsr = isSundayDsr || ((fixedDsrDays || []).includes(dayOfWeek) && dayOfWeek !== 0);
 
   return { isDsr, isHoliday };
 }

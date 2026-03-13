@@ -11,27 +11,24 @@
 function updateFields(html: string, currentFields: Record<string, string>): Record<string, string> {
   const fields = { ...currentFields };
   
-  // Lógica para respostas AJAX Delta (|length|type|id|content|)
-  if (html.includes('|')) {
-    const parts = html.split('|');
-    for (let i = 0; i < parts.length; i++) {
-      const type = parts[i];
-      const id = parts[i + 1];
-      const content = parts[i + 2];
-      
-      if (type === 'hiddenField' && id) {
-        fields[id] = content;
-      }
-      if (['__VIEWSTATE', '__EVENTVALIDATION', '__VIEWSTATEGENERATOR'].includes(id)) {
-        fields[id] = content;
-      }
-    }
+  // Busca campos ocultos padrão do ASP.NET em todo o conteúdo (HTML ou Delta)
+  // O formato no Delta é |hiddenField|id|value| mas o regex abaixo também pega se estiver no formato HTML
+  const hiddenRegex = /\|hiddenField\|(__\w+)\|([^|]*)\|/g;
+  let hMatch;
+  while ((hMatch = hiddenRegex.exec(html)) !== null) {
+    fields[hMatch[1]] = hMatch[2];
   }
 
-  // Fallback para HTML completo
-  const regex = /id="(__\w+)"\s+value="([^"]*)"/g;
+  // Também busca os campos de estado específicos do AJAX
+  const stateRegex = /\|(__VIEWSTATE|__EVENTVALIDATION|__VIEWSTATEGENERATOR)\|([^|]*)\|/g;
+  while ((hMatch = stateRegex.exec(html)) !== null) {
+    fields[hMatch[1]] = hMatch[2];
+  }
+
+  // Fallback para HTML completo ou campos que não vieram no formato Delta acima
+  const htmlRegex = /id="(__\w+)"\s+value="([^"]*)"/g;
   let match;
-  while ((match = regex.exec(html)) !== null) {
+  while ((match = htmlRegex.exec(html)) !== null) {
     fields[match[1]] = match[2];
   }
   
@@ -40,22 +37,50 @@ function updateFields(html: string, currentFields: Record<string, string>): Reco
 
 function extractTimesFromGrid(html: string): string[] {
   const times: string[] = [];
-  // Busca horários HH:MM dentro da tabela Grid
-  const timeRegex = /<td>\s*([0-2]?\d:[0-5]\d)\s*<\/td>/g;
+  
+  // Tenta isolar a área da Grid para evitar pegar horários de cabeçalhos ou rodapés (como o Total)
+  let searchArea = html;
+  const gridMatch = html.match(/<table[^>]*?id="[^"]*?Grid[^"]*?"[^>]*?>([\s\S]*?)<\/table>/i) || 
+                    html.match(/<table[^>]*?class="[^"]*?Grid[^"]*?"[^>]*?>([\s\S]*?)<\/table>/i);
+  
+  if (gridMatch) {
+    searchArea = gridMatch[1];
+  }
+
+  // Busca horários HH:MM dentro de tags (<td>, <span>, etc)
+  const timeRegex = />\s*([0-2]?\d:[0-5]\d)\s*</g;
   let match;
-  while ((match = timeRegex.exec(html)) !== null) {
+  while ((match = timeRegex.exec(searchArea)) !== null) {
     times.push(match[1]);
   }
   
-  return Array.from(new Set(times)).map(t => {
+  // Se não achou nada na área da grid, tenta no HTML todo com o fallback
+  if (times.length === 0) {
+    const fallbackRegex = />\s*([0-2]?\d:[0-5]\d)\s*</g;
+    while ((match = fallbackRegex.exec(html)) !== null) {
+      times.push(match[1]);
+    }
+  }
+
+  // NÃO usamos Set aqui para permitir batidas duplicadas (caso ocorram por erro no portal)
+  // Mas removemos o "Total" se ele for a última entrada e o número de batidas for ímpar
+  // Geralmente o total é a soma, e batidas são pares.
+  let finalTimes = times.map(t => {
       const parts = t.split(':');
       return `${parts[0].padStart(2, '0')}:${parts[1]}`;
   });
+
+  // Heurística: Se temos um número ímpar de batidas e a última parece um total (ex: > 4h)
+  // ou se o portal costuma colocar o total na última célula.
+  // Por enquanto, vamos manter todas e deixar o usuário editar se necessário, 
+  // mas vamos remover duplicatas CONSECUTIVAS que são comuns em erros de leitura.
+  return finalTimes.filter((t, i) => t !== finalTimes[i - 1]);
 }
 
 function extractCalendarArguments(html: string, targetMonth: number): Record<number, string> {
   const map: Record<number, string> = {};
-  const linkRegex = /href="javascript:__doPostBack\('Calendar','(\d+)'\)"[^>]*?title="(\d+)\s+de\s+([^"]+)"/gi;
+  // Regex mais flexível para o título do calendário
+  const linkRegex = /href="javascript:__doPostBack\('Calendar','(\d+)'\)"[^>]*?title="[^"]*?(\d+)\s+de\s+([^"]+)"/gi;
   let match;
   const monthNames = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
   const targetMonthName = monthNames[targetMonth - 1];
@@ -288,6 +313,15 @@ export async function fetchMonthData(matricula: string, month: number, year: num
     }
 
     console.log(`[Fetch] Finalizado. Total de dias com dados: ${results.length}`);
+    
+    if (results.length === 0 && daysToFetch.length > 0) {
+      console.warn("[Fetch] Nenhum horário extraído, embora o calendário tenha sido encontrado.");
+      return { 
+        success: false, 
+        error: "O calendário foi localizado, mas nenhum horário foi extraído. Verifique se há marcações no portal para este período." 
+      };
+    }
+
     return { success: true, data: results };
   } catch (error: any) {
     console.error("Erro na extração:", error);

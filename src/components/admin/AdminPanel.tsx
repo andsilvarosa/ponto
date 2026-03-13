@@ -164,7 +164,7 @@ export function AdminPanel({ onRefresh }: AdminPanelProps) {
     }
   };
 
-  const filteredUsers = users.filter(u => u.registrationNumber.includes(search));
+  const filteredUsers = users.filter(u => (u.registrationNumber || '').includes(search));
   const workingStaff = scheduleData.filter(s => s.isWorking);
   const offStaff = scheduleData.filter(s => !s.isWorking);
 
