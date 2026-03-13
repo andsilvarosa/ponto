@@ -27,11 +27,13 @@ async function getDb() {
   // 3. Local Fallback for AI Studio Preview / Development
   // Using eval('require') to hide these from Webpack/Vite bundlers
   // which would otherwise try to resolve 'fs' and 'path' dependencies
-  if (typeof process !== 'undefined' && process.env.NEXT_RUNTIME !== 'edge') {
+  if (typeof process !== 'undefined' && process.env.NEXT_RUNTIME !== 'edge' && process.env.NODE_ENV !== 'production') {
     if (!localDb) {
       try {
         // Use dynamic require to avoid bundling issues in Edge/Browser
-        const requireFunc = typeof __webpack_require__ === "function" ? __non_webpack_require__ : require;
+        // We use a variable to store the require to trick the bundler
+        const r = require;
+        const requireFunc = typeof __webpack_require__ === "function" ? __non_webpack_require__ : r;
         
         const { drizzle: drizzleSqlite } = requireFunc('drizzle-orm/better-sqlite3');
         const Database = requireFunc('better-sqlite3');

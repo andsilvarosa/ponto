@@ -1,6 +1,9 @@
 
 'use client';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'edge';
+
 import { useState, useEffect } from 'react';
 import { MatriculaInput } from '@/components/MatriculaInput';
 import { SummaryCards } from '@/components/dashboard/SummaryCards';

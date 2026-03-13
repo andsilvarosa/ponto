@@ -1,6 +1,8 @@
 import type {Metadata} from 'next';
 import './globals.css';
 
+export const runtime = 'edge';
+
 export const metadata: Metadata = {
   title: 'Ponto Ágil - Consulta de Ponto',
   description: 'Gestão moderna e eficiente de banco de horas para colaboradores.',
