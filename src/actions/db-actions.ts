@@ -9,32 +9,51 @@ let cachedDb: any = null;
 async function getDb() {
   if (cachedDb) return cachedDb;
 
+  const isEdge = process.env.NEXT_RUNTIME === 'edge';
+  const isProd = process.env.NODE_ENV === 'production';
+
   // 1. AMBIENTE CLOUDFLARE (EDGE) - PRODUÇÃO
-  if (process.env.NEXT_RUNTIME === 'edge' || process.env.NODE_ENV === 'production') {
+  if (isEdge || isProd) {
     try {
-      // Importações dinâmicas para não poluir o ambiente Node.js
-      const { getRequestContext } = await import('@cloudflare/next-on-pages');
-      const { drizzle: drizzleD1 } = await import('drizzle-orm/d1');
+      console.log("[DB] Iniciando busca de binding D1...");
       
-      const context = getRequestContext();
-      if (context?.env?.DB) {
-        cachedDb = drizzleD1(context.env.DB);
+      // No Cloudflare Pages com Next.js 15, o binding pode estar em múltiplos lugares
+      let dbBinding: any = null;
+
+      // Tentar via process.env (comum em builds recentes)
+      if (typeof process !== 'undefined' && (process.env as any).DB) {
+        dbBinding = (process.env as any).DB;
+        console.log("[DB] Binding encontrado em process.env.DB");
+      }
+
+      // Tentar via getRequestContext se o anterior falhar
+      if (!dbBinding) {
+        try {
+          const { getRequestContext } = await import('@cloudflare/next-on-pages');
+          const context = getRequestContext();
+          dbBinding = context?.env?.DB;
+          if (dbBinding) console.log("[DB] Binding encontrado em getRequestContext().env.DB");
+        } catch (e) {
+          console.log("[DB] getRequestContext não disponível");
+        }
+      }
+
+      if (dbBinding) {
+        const { drizzle: drizzleD1 } = await import('drizzle-orm/d1');
+        cachedDb = drizzleD1(dbBinding);
         return cachedDb;
       }
       
-      // Se estivermos no Edge mas sem o binding DB, não podemos continuar para o SQLite
-      if (process.env.NEXT_RUNTIME === 'edge') {
-        console.error("D1 Binding 'DB' not found in Edge runtime");
-        return null;
-      }
+      console.error("[DB] ERRO: Binding 'DB' não encontrado. Verifique as configurações do Cloudflare Pages.");
+      return null;
     } catch (e) {
-      console.error("Erro ao inicializar D1 no Cloudflare:", e);
-      if (process.env.NEXT_RUNTIME === 'edge') return null;
+      console.error("[DB] Exceção crítica ao inicializar D1:", e);
+      return null;
     }
   }
 
   // 2. AMBIENTE DESENVOLVIMENTO / NODE.JS (AI Studio)
-  if (process.env.NEXT_RUNTIME !== 'edge') {
+  if (!isProd && !isEdge) {
     try {
       // Usamos uma string dinâmica para o require para impedir que o Webpack tente resolver o módulo durante o build do Cloudflare
       const moduleName = 'better-sqlite3';

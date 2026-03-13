@@ -1,9 +1,9 @@
 name = "ponto"
 compatibility_date = "2024-03-12"
 compatibility_flags = ["nodejs_compat"]
-pages_build_output_dir = ".vercel/output/static"
+pages_build_output_dir = ".next"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "ponto"
-database_id = "d88ca62e-d373-4fed-850c-05991f166528"
+database_id = "088b8a35-e578-4cd0-8919-0315ddaf345d"
