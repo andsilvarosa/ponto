@@ -5,5 +5,5 @@ pages_build_output_dir = ".vercel/output/static"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "ponto-agil-db"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_name = "ponto"
+database_id = "088b8a35-e578-4cd0-8919-0315ddaf345d"
