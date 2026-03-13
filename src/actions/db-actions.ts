@@ -5,94 +5,90 @@ import { drizzle } from 'drizzle-orm/d1';
 import { users, monthlySummaries, dailyEntries } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 
-let localDb: any = null;
+// Variável para cache do banco local (apenas dev)
+let cachedLocalDb: any = null;
 
 async function getDb() {
-  // 1. Try Cloudflare Request Context (Edge Runtime)
+  // 1. Tentar contexto do Cloudflare (Produção/Preview no Cloudflare)
   try {
     const context = getRequestContext();
     if (context?.env?.DB) {
       return drizzle(context.env.DB);
     }
   } catch (e) {
-    // Not in Cloudflare Edge environment
+    // Não estamos no ambiente Edge do Cloudflare ou context não disponível
   }
 
-  // 2. Try process.env.DB (Cloudflare Node.js runtime or local emulation)
-  const env = process.env as any;
-  if (env.DB && typeof env.DB.prepare === 'function') {
-    return drizzle(env.DB);
-  }
-
-  // 3. Local Fallback for AI Studio Preview / Development
-  // Using eval('require') to hide these from Webpack/Vite bundlers
-  // which would otherwise try to resolve 'fs' and 'path' dependencies
-  if (typeof process !== 'undefined' && process.env.NEXT_RUNTIME !== 'edge' && process.env.NODE_ENV !== 'production') {
-    if (!localDb) {
-      try {
-        // Use dynamic require to avoid bundling issues in Edge/Browser
-        // We use a variable to store the require to trick the bundler
-        const r = require;
-        const requireFunc = typeof __webpack_require__ === "function" ? __non_webpack_require__ : r;
-        
-        const { drizzle: drizzleSqlite } = requireFunc('drizzle-orm/better-sqlite3');
-        const Database = requireFunc('better-sqlite3');
-        
-        const sqlite = new Database('local.db');
-        localDb = drizzleSqlite(sqlite);
-        
-        // Basic initialization for local development
-        sqlite.exec(`
-          CREATE TABLE IF NOT EXISTS users (
-            matricula TEXT PRIMARY KEY,
-            uid TEXT UNIQUE,
-            is_admin INTEGER DEFAULT 0,
-            auth_version INTEGER DEFAULT 0,
-            previous_balance TEXT DEFAULT '00:00',
-            previous_balance_month INTEGER,
-            previous_balance_year INTEGER,
-            balance_adjustment TEXT DEFAULT '00:00',
-            previous_holiday_balance INTEGER DEFAULT 0,
-            fixed_dsr_days TEXT,
-            reference_dsr_sunday TEXT,
-            daily_workload INTEGER DEFAULT 440,
-            holidays TEXT,
-            registration_number TEXT,
-            updated_at TEXT
-          );
-          CREATE TABLE IF NOT EXISTS monthly_summaries (
-            id TEXT PRIMARY KEY,
-            user_profile_id TEXT REFERENCES users(matricula) ON DELETE CASCADE,
-            year INTEGER,
-            month INTEGER,
-            scraped_at TEXT
-          );
-          CREATE TABLE IF NOT EXISTS daily_entries (
-            id TEXT PRIMARY KEY,
-            monthly_point_summary_id TEXT REFERENCES monthly_summaries(id) ON DELETE CASCADE,
-            user_profile_id TEXT REFERENCES users(matricula) ON DELETE CASCADE,
-            date TEXT,
-            times TEXT,
-            is_manual_dsr INTEGER DEFAULT 0,
-            is_manual_work INTEGER DEFAULT 0,
-            is_holiday INTEGER DEFAULT 0,
-            is_compensation INTEGER DEFAULT 0,
-            is_bank_off INTEGER DEFAULT 0
-          );
-        `);
-      } catch (e) {
-        console.error("Failed to initialize local SQLite fallback:", e);
-      }
+  // 2. Tentar variável global (Alguns ambientes de emulação)
+  const globalEnv = globalThis as any;
+  if (globalEnv.DB || (typeof process !== 'undefined' && (process.env as any).DB)) {
+    const dbBinding = globalEnv.DB || (process.env as any).DB;
+    if (dbBinding && typeof dbBinding.prepare === 'function') {
+      return drizzle(dbBinding);
     }
-    return localDb;
   }
 
+  // 3. Fallback para Desenvolvimento Local (AI Studio / Node.js)
+  // IMPORTANTE: Este bloco NUNCA deve ser executado no Cloudflare Edge
+  if (process.env.NODE_ENV !== 'production' && typeof process !== 'undefined' && process.env.NEXT_RUNTIME !== 'edge') {
+    if (cachedLocalDb) return cachedLocalDb;
+
+    try {
+      // Usamos import dinâmico para evitar que o bundler do Cloudflare tente processar isso
+      const { drizzle: drizzleSqlite } = await import('drizzle-orm/better-sqlite3');
+      const Database = (await import('better-sqlite3')).default;
+      
+      const sqlite = new Database('local.db');
+      cachedLocalDb = drizzleSqlite(sqlite);
+      
+      // Inicialização básica das tabelas se não existirem
+      sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS users (
+          matricula TEXT PRIMARY KEY,
+          uid TEXT UNIQUE,
+          is_admin INTEGER DEFAULT 0,
+          auth_version INTEGER DEFAULT 0,
+          previous_balance TEXT DEFAULT '00:00',
+          previous_balance_month INTEGER,
+          previous_balance_year INTEGER,
+          balance_adjustment TEXT DEFAULT '00:00',
+          previous_holiday_balance INTEGER DEFAULT 0,
+          fixed_dsr_days TEXT,
+          reference_dsr_sunday TEXT,
+          daily_workload INTEGER DEFAULT 440,
+          holidays TEXT,
+          registration_number TEXT,
+          updated_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS monthly_summaries (
+          id TEXT PRIMARY KEY,
+          user_profile_id TEXT REFERENCES users(matricula) ON DELETE CASCADE,
+          year INTEGER,
+          month INTEGER,
+          scraped_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS daily_entries (
+          id TEXT PRIMARY KEY,
+          monthly_point_summary_id TEXT REFERENCES monthly_summaries(id) ON DELETE CASCADE,
+          user_profile_id TEXT REFERENCES users(matricula) ON DELETE CASCADE,
+          date TEXT,
+          times TEXT,
+          is_manual_dsr INTEGER DEFAULT 0,
+          is_manual_work INTEGER DEFAULT 0,
+          is_holiday INTEGER DEFAULT 0,
+          is_compensation INTEGER DEFAULT 0,
+          is_bank_off INTEGER DEFAULT 0
+        );
+      `);
+      return cachedLocalDb;
+    } catch (e) {
+      console.error("Erro ao inicializar SQLite local:", e);
+    }
+  }
+
+  console.error("ERRO CRÍTICO: Banco de dados não disponível. Verifique o binding 'DB' no Cloudflare.");
   return null;
 }
-
-// Declare global for webpack
-declare var __webpack_require__: any;
-declare var __non_webpack_require__: any;
 
 export async function getUserProfile(matricula: string) {
   try {
