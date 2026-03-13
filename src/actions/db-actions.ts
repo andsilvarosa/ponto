@@ -109,6 +109,13 @@ async function getDb() {
           is_bank_off INTEGER DEFAULT 0,
           is_manual INTEGER DEFAULT 0
         );
+        
+        // Migração segura para adicionar colunas se não existirem
+        try {
+          sqlite.exec("ALTER TABLE daily_entries ADD COLUMN is_manual INTEGER DEFAULT 0;");
+        } catch (e) {
+          // Coluna provavelmente já existe, ignoramos o erro
+        }
       `);
       return cachedDb;
     } catch (e) {
@@ -206,8 +213,9 @@ export async function saveDailyEntriesBatch(matricula: string, month: number, ye
       const existing = await db.select().from(dailyEntries).where(eq(dailyEntries.id, entryId)).get();
       
       // Se o registro já existe e foi marcado como manual, ignoramos a atualização do portal para este dia
-      if (existing && existing.isManual) {
-        console.log(`[DB] Pulando atualização do portal para o dia ${entry.date} (Registro Manual)`);
+      // Verificamos tanto o campo booleano quanto o valor numérico (SQLite)
+      if (existing && (existing.isManual === true || existing.isManual === 1)) {
+        console.log(`[DB] Mantendo registro manual para ${entry.date}`);
         continue;
       }
 
@@ -221,7 +229,7 @@ export async function saveDailyEntriesBatch(matricula: string, month: number, ye
         isHoliday: entry.isHoliday || false,
         isCompensation: entry.isCompensation || false,
         isBankOff: entry.isBankOff || false,
-        isManual: false // Registros vindos do portal não são manuais
+        isManual: false
       };
 
       if (existing) {
@@ -262,8 +270,8 @@ export async function saveSingleEntry(matricula: string, month: number, year: nu
 
     // Determina se é um lançamento manual
     // É manual se houver qualquer ajuste de tipo de dia OU se for explicitamente marcado
-    const isManual = data.isManualDsr || data.isManualWork || data.isHoliday || 
-                     data.isCompensation || data.isBankOff || data.isManual === true;
+    const isManual = Boolean(data.isManualDsr || data.isManualWork || data.isHoliday || 
+                     data.isCompensation || data.isBankOff || data.isManual === true);
 
     const finalData = {
       ...data,
