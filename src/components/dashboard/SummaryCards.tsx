@@ -85,6 +85,12 @@ export function SummaryCards({
       const isMetaZero = (isManualFolga || isSystemHoliday || isSystemDsr) && !record.isManualWork;
       const goalForDay = isMetaZero ? 0 : dailyWorkload;
 
+      // Se for HOJE e ainda não bateu a meta, não conta o saldo negativo no resumo
+      const isToday = record.date === todayStr;
+      if (isToday && dailyWorked < goalForDay) {
+        return;
+      }
+
       if (dailyWorked > 0 || !isMetaZero) {
         totalWorkedMinutes += dailyWorked;
         totalGoalMinutes += goalForDay;
