@@ -1,5 +1,6 @@
 {
   "scripts": {
+    "dev": "echo 'Arquivos perdidos, por favor restaure do GitHub' && sleep 3600",
     "vercel-build": "next build"
   }
 }
