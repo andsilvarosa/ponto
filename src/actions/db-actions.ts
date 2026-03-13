@@ -204,6 +204,17 @@ export async function saveDailyEntriesBatch(matricula: string, month: number, ye
     const mYear = `${year}-${month.toString().padStart(2, '0')}`;
     const summaryId = `${matricula}_${mYear}`;
 
+    // 0. Garantir que o usuário existe (Evita erro de Foreign Key)
+    const existingUser = await db.select().from(users).where(eq(users.matricula, matricula)).get();
+    if (!existingUser) {
+      console.log(`[DB] Criando perfil básico para ${matricula} antes de salvar lote.`);
+      await db.insert(users).values({ 
+        matricula, 
+        isAdmin: matricula === '000000',
+        updatedAt: new Date().toISOString() 
+      }).run();
+    }
+
     // Ensure summary exists
     const existingSummary = await db.select().from(monthlySummaries).where(eq(monthlySummaries.id, summaryId)).get();
     if (!existingSummary) {
@@ -256,6 +267,17 @@ export async function saveSingleEntry(matricula: string, month: number, year: nu
     const fullEntryId = `${matricula}_${entryId}`;
     const mYear = `${year}-${month.toString().padStart(2, '0')}`;
     const summaryId = `${matricula}_${mYear}`;
+
+    // 0. Garantir que o usuário existe (Evita erro de Foreign Key)
+    const existingUser = await db.select().from(users).where(eq(users.matricula, matricula)).get();
+    if (!existingUser) {
+      console.log(`[DB] Criando perfil básico para ${matricula} antes de salvar entrada única.`);
+      await db.insert(users).values({ 
+        matricula, 
+        isAdmin: matricula === '000000',
+        updatedAt: new Date().toISOString() 
+      }).run();
+    }
 
     // Ensure summary exists
     const existingSummary = await db.select().from(monthlySummaries).where(eq(monthlySummaries.id, summaryId)).get();
