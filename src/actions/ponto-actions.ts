@@ -88,8 +88,7 @@ export async function fetchMonthData(matricula: string, month: number, year: num
     // 0. GET inicial para pegar VIEWSTATE e Cookies
     const responseGet = await fetch(TARGET_URL, {
       method: 'GET',
-      headers: commonHeaders,
-      cache: 'no-store'
+      headers: commonHeaders
     });
     
     if (!responseGet.ok) throw new Error(`Portal indisponível (Status ${responseGet.status})`);

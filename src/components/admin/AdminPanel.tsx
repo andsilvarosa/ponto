@@ -46,7 +46,7 @@ export function AdminPanel({ onRefresh }: AdminPanelProps) {
       const currentMonth = now.getMonth() + 1;
       const currentYear = now.getFullYear();
 
-      const userList = await Promise.all(usersList.map(async (data) => {
+      const userList = await Promise.all(usersList.map(async (data: any) => {
         const matricula = data.matricula;
         let totalBalanceStr = "---";
         
@@ -126,7 +126,7 @@ export function AdminPanel({ onRefresh }: AdminPanelProps) {
       if (u.id === '000000') return null;
 
       const records = await getMonthlyEntries(u.id, m, y);
-      const manualEntry = records.find(r => r.id === `${u.id}_${dayId}`) || null;
+      const manualEntry = records.find((r: any) => r.id === `${u.id}_${dayId}`) || null;
 
       const fixedDsrDays = typeof u.rawProfile.fixedDsrDays === 'string' ? JSON.parse(u.rawProfile.fixedDsrDays) : (u.rawProfile.fixedDsrDays || [0]);
       const holidays = typeof u.rawProfile.holidays === 'string' ? JSON.parse(u.rawProfile.holidays) : (u.rawProfile.holidays || []);

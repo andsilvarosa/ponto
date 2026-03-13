@@ -65,6 +65,8 @@
     "@types/react": "^19.2.1",
     "@types/react-dom": "^19.2.1",
     "drizzle-kit": "^0.31.9",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.1.6",
     "genkit-cli": "^1.28.0",
     "postcss": "^8",
     "typescript": "^5",

@@ -126,7 +126,7 @@ export async function getUserProfile(matricula: string) {
       return null;
     }
     const result = await db.select().from(users).where(eq(users.matricula, matricula)).get();
-    return result || null;
+    return result ? JSON.parse(JSON.stringify(result)) : null;
   } catch (e: any) {
     if (e?.message?.includes("no such table")) {
       console.error(`[DB] ERRO CRÍTICO: A tabela 'users' não existe no banco D1. Execute as migrações.`);
@@ -170,7 +170,7 @@ export async function getMonthlyEntries(matricula: string, month: number, year: 
         eq(dailyEntries.monthlyPointSummaryId, summaryId)
       )).all();
       
-    return entries;
+    return entries ? JSON.parse(JSON.stringify(entries)) : [];
   } catch (e) {
     console.error("Error fetching monthly entries:", e);
     return [];
@@ -274,7 +274,8 @@ export async function getAllUsers() {
   try {
     const db = await getDb();
     if (!db) return [];
-    return await db.select().from(users).all();
+    const result = await db.select().from(users).all();
+    return result ? JSON.parse(JSON.stringify(result)) : [];
   } catch (e) {
     console.error("Error fetching all users:", e);
     return [];

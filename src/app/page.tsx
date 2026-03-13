@@ -89,7 +89,7 @@ export default function Home() {
       let base = await getUserProfile(m) || { isAdmin: m === '000000' } as any;
 
       const rawRecords = await getMonthlyEntries(m, month, year);
-      const mappedRecords = rawRecords.map(r => ({
+      const mappedRecords = rawRecords.map((r: any) => ({
         ...r,
         id: r.id.replace(`${m}_`, ''),
       })) as DailyRecord[];
@@ -274,6 +274,7 @@ export default function Home() {
                     }
 
                     const freshData = result.data;
+                    if (!freshData) return;
                     const normalizedData = normalizeNightShifts(freshData.map(d => ({ ...d, times: [...d.times] })));
                     
                     await saveDailyEntriesBatch(matricula, viewMonth, viewYear, normalizedData);
