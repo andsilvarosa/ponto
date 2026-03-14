@@ -19,6 +19,41 @@ import { DailyRecord } from "@/app/page";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+function getExpectedEndTime(times: string[], dailyWorkload: number): string | null {
+  if (times.length === 0 || times.length % 2 === 0) return null;
+
+  const timeToMinutes = (t: string) => {
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+  };
+
+  const minutesToTimeStr = (m: number) => {
+    const h = Math.floor(m / 60) % 24;
+    const mins = m % 60;
+    return `${String(h).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+  };
+
+  if (times.length === 1) {
+    // Assume 1 hora (60 min) de intervalo por padrão se só tem a entrada
+    const startMins = timeToMinutes(times[0]);
+    const endMins = startMins + dailyWorkload + 60;
+    return minutesToTimeStr(endMins);
+  }
+
+  let workedSoFar = 0;
+  for (let i = 0; i < times.length - 1; i += 2) {
+    workedSoFar += timeToMinutes(times[i+1]) - timeToMinutes(times[i]);
+  }
+  
+  const lastPunch = timeToMinutes(times[times.length - 1]);
+  const remaining = dailyWorkload - workedSoFar;
+  
+  // Se já cumpriu a carga, não tem previsão de saída (já devia ter saído)
+  if (remaining <= 0) return null;
+
+  return minutesToTimeStr(lastPunch + remaining);
+}
+
 interface DailyRecordsTableProps {
   records: DailyRecord[];
   fixedDsrDays: number[];
@@ -195,6 +230,20 @@ export function DailyRecordsTable({
                                 {time}
                               </Badge>
                             ))}
+                            {isToday && sorted.length % 2 !== 0 && getExpectedEndTime(sorted, dailyWorkload) && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger>
+                                    <Badge variant="outline" className="font-black px-2 shadow-sm border-blue-500 text-blue-500 bg-blue-500/5 ml-1 animate-pulse">
+                                      ~ {getExpectedEndTime(sorted, dailyWorkload)}
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="bg-blue-600 text-white border-none">
+                                    <p className="text-[10px] font-bold">Saída prevista (sugestão com base na carga horária).</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
                             {nightBonus > 0 && <Moon className="w-3.5 h-3.5 text-blue-500 ml-1" />}
                             {isSystemHoliday && <Star className="w-3 h-3 text-amber-500 fill-amber-500 ml-1" />}
                             {isSystemDsr && !isSystemHoliday && <Coffee className="w-3 h-3 text-green-500 ml-1" />}
