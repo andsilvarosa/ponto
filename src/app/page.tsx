@@ -67,37 +67,74 @@ export default function Home() {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [editingRecord, setEditingRecord] = useState<DailyRecord | null>(null);
   
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [autoSyncedMonths, setAutoSyncedMonths] = useState<string[]>([]);
+  
   const [isUserLoading, setIsUserLoading] = useState(true);
 
-  useEffect(() => {
-    const now = new Date();
-    if (viewMonth === null) setViewMonth(now.getMonth() + 1);
-    if (viewYear === null) setViewYear(now.getFullYear());
-    setIsUserLoading(false);
-  }, []);
+  const handleSync = async (m: string, month: number, year: number, isAuto = false) => {
+    if (isSyncing) return;
+    
+    const monthKey = `${m}_${month}_${year}`;
+    if (isAuto && autoSyncedMonths.includes(monthKey)) return;
 
-  useEffect(() => {
-    const saved = localStorage.getItem('logged_matricula');
-    if (saved && !isUserLoading && viewMonth !== null && viewYear !== null) {
-      setMatricula(saved);
-      loadEmployeeData(saved, viewMonth, viewYear);
+    console.log(`[Sync] Starting ${isAuto ? 'auto' : 'manual'} sync for:`, m);
+    setIsSyncing(true);
+    
+    const syncToast = toast({ 
+      title: isAuto ? "Sincronizando automaticamente..." : "Sincronizando...", 
+      description: "Buscando dados no portal para este mês.",
+      duration: 5000 
+    });
+
+    try {
+      const result = await fetchMonthData(m, month, year);
+      if (!result.success) throw new Error(result.error);
+
+      const freshData = result.data;
+      if (freshData) {
+        const normalizedData = normalizeNightShifts(freshData.map(d => ({ 
+          ...d, 
+          id: d.date.replace(/\//g, '-'),
+          times: [...d.times] 
+        })));
+        
+        await saveDailyEntriesBatch(m, month, year, normalizedData);
+        if (isAuto) setAutoSyncedMonths(prev => [...prev, monthKey]);
+        
+        // Recarrega apenas os dados locais após o sync
+        await loadEmployeeData(m, month, year, true);
+        toast({ title: "Dados atualizados!" });
+      }
+    } catch (e: any) {
+      console.error("[Sync] Error:", e);
+      if (!isAuto) {
+        toast({ variant: "destructive", title: "Erro na sincronização", description: e.message || "Portal lento ou fora do ar." });
+      }
+    } finally {
+      setIsSyncing(false);
     }
-  }, [isUserLoading, viewMonth, viewYear]);
+  };
 
-  const loadEmployeeData = async (m: string, month: number, year: number) => {
-    setIsLoading(true);
+  const loadEmployeeData = async (m: string, month: number, year: number, skipSyncCheck = false) => {
+    // Só mostra o loader principal se não tivermos dado nenhum ainda
+    if (!employeeData) setIsLoading(true);
+    
     try {
       let base = await getUserProfile(m) || { isAdmin: m === '000000' } as any;
-
       const rawRecords = await getMonthlyEntries(m, month, year);
+      
+      // Verifica se o mês está vazio (sem batidas reais)
+      const hasPunches = rawRecords.some((r: any) => r.times && JSON.parse(r.times).length > 0);
+      
       const mappedRecords = rawRecords.map((r: any) => ({
         ...r,
         id: r.id.replace(`${m}_`, ''),
       })) as DailyRecord[];
       
       const daysInMonth = new Date(year, month, 0).getDate();
-      
       const fullMonthRecords: DailyRecord[] = [];
+      
       for (let d = 1; d <= daysInMonth; d++) {
         const dateStr = `${d.toString().padStart(2, '0')}/${month.toString().padStart(2, '0')}/${year}`;
         const existing = mappedRecords.find(r => r.date === dateStr);
@@ -113,7 +150,6 @@ export default function Home() {
       }
 
       const normalized = normalizeNightShifts(fullMonthRecords);
-      
       const todayLimit = new Date();
       todayLimit.setHours(0,0,0,0);
 
@@ -122,23 +158,15 @@ export default function Home() {
           const [dB, mB, yB] = b.date.split('/').map(Number);
           const dateA = new Date(yA, mA - 1, dA);
           const dateB = new Date(yB, mB - 1, dB);
-          
           const isTodayA = dateA.getTime() === todayLimit.getTime();
           const isTodayB = dateB.getTime() === todayLimit.getTime();
-
           if (isTodayA) return -1;
           if (isTodayB) return 1;
-
           const isFutureA = dateA > todayLimit;
           const isFutureB = dateB > todayLimit;
-
           if (!isFutureA && isFutureB) return -1;
           if (isFutureA && !isFutureB) return 1;
-
-          if (!isFutureA && !isFutureB) {
-            return dateB.getTime() - dateA.getTime();
-          }
-
+          if (!isFutureA && !isFutureB) return dateB.getTime() - dateA.getTime();
           return dateA.getTime() - dateB.getTime();
       });
 
@@ -160,6 +188,12 @@ export default function Home() {
         uid: base.uid,
         authVersion: base.authVersion || 0
       } as EmployeeData);
+
+      // Se não houver batidas no banco e não pedimos para pular, sincroniza automaticamente
+      if (!hasPunches && !skipSyncCheck && m !== '000000') {
+        handleSync(m, month, year, true);
+      }
+
     } catch (e) { 
       console.error("Erro ao carregar dados:", e);
     } finally { 
@@ -264,48 +298,12 @@ export default function Home() {
                   <p className="text-[10px] font-black text-muted-foreground uppercase">Colaborador</p>
                   <h2 className="text-xl font-black text-foreground">#{matricula}</h2>
                 </div>
-                <Button onClick={async () => {
-                  if (!matricula || viewMonth === null || viewYear === null) {
-                    console.log("[Update] Missing data:", { matricula, viewMonth, viewYear });
-                    return;
+                <Button onClick={() => {
+                  if (matricula && viewMonth !== null && viewYear !== null) {
+                    handleSync(matricula, viewMonth, viewYear);
                   }
-                  console.log("[Update] Starting sync for:", matricula, "(Action Sync v2)");
-                  setIsLoading(true);
-                  const syncToast = toast({ title: "Sincronizando...", description: "Buscando dados no portal (isso pode levar alguns segundos).", duration: 10000 });
-                  try {
-                    const result = await fetchMonthData(matricula, viewMonth, viewYear);
-                    console.log("[Update] Result:", result.success ? "Success" : "Failed", result.error);
-                    
-                    if (!result.success) {
-                      throw new Error(result.error);
-                    }
-
-                    const freshData = result.data;
-                    if (!freshData) {
-                      console.log("[Update] No data returned");
-                      return;
-                    }
-                    console.log("[Update] Data received, normalizing...");
-                    const normalizedData = normalizeNightShifts(freshData.map(d => ({ 
-                      ...d, 
-                      id: d.date.replace(/\//g, '-'), // Adiciona ID baseado na data
-                      times: [...d.times] 
-                    })));
-                    
-                    console.log("[Update] Saving batch...");
-                    await saveDailyEntriesBatch(matricula, viewMonth, viewYear, normalizedData);
-
-                    console.log("[Update] Reloading local data...");
-                    await loadEmployeeData(matricula, viewMonth, viewYear);
-                    toast({ title: "Portal sincronizado!" });
-                  } catch (e: any) {
-                    console.error("[Update] Error:", e);
-                    toast({ variant: "destructive", title: "Erro na sincronização", description: e.message || "Portal lento ou fora do ar." });
-                  } finally {
-                    setIsLoading(false);
-                  }
-                }} disabled={isLoading} variant="default" className="shadow-xl font-black bg-primary transform transition hover:scale-105">
-                  {isLoading ? <Loader2 className="animate-spin w-5 h-5" /> : <RefreshCcw className="w-5 h-5 mr-3" />}
+                }} disabled={isSyncing} variant="default" className="shadow-xl font-black bg-primary transform transition hover:scale-105">
+                  {isSyncing ? <Loader2 className="animate-spin w-5 h-5" /> : <RefreshCcw className="w-5 h-5 mr-3" />}
                   ATUALIZAR DADOS
                 </Button>
               </div>
