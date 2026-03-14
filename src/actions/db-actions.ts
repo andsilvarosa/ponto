@@ -111,11 +111,22 @@ async function getDb() {
         );
       `);
 
-      // Migração segura para adicionar colunas se não existirem (FORA do exec anterior)
-      try {
-        sqlite.exec("ALTER TABLE daily_entries ADD COLUMN is_manual INTEGER DEFAULT 0;");
-      } catch (e) {
-        // Coluna provavelmente já existe, ignoramos o erro
+      // Migrações seguras para adicionar colunas se não existirem
+      const columns = [
+        "is_manual_dsr",
+        "is_manual_work",
+        "is_holiday",
+        "is_compensation",
+        "is_bank_off",
+        "is_manual"
+      ];
+
+      for (const col of columns) {
+        try {
+          sqlite.exec(`ALTER TABLE daily_entries ADD COLUMN ${col} INTEGER DEFAULT 0;`);
+        } catch (e) {
+          // Coluna provavelmente já existe
+        }
       }
 
       return cachedDb;
