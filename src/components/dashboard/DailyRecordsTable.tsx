@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Edit2, Info, Star, Landmark, Moon, Coffee, Clock, CalendarClock } from "lucide-react";
-import { calculateDetailedWork, minutesToTime, sortPontoHours, isDateDsr } from "@/lib/ponto-utils";
+import { calculateDetailedWork, calculateNightMinutes, minutesToTime, sortPontoHours, isDateDsr } from "@/lib/ponto-utils";
 import { DailyRecord } from "@/app/page";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -33,25 +33,46 @@ function getExpectedEndTime(times: string[], dailyWorkload: number): string | nu
     return `${String(h).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
   };
 
+  const entryTimes = times.filter((_, i) => i % 2 === 0 && i < times.length - 1);
+  const exitTimes = times.filter((_, i) => i % 2 !== 0);
+  
+  const { total: workedSoFar } = calculateDetailedWork(entryTimes, exitTimes);
+  
+  const lastPunchStr = times[times.length - 1];
+  let lastPunchMins = timeToMinutes(lastPunchStr);
+  
+  if (times.length > 1 && lastPunchMins < timeToMinutes(times[0])) {
+    lastPunchMins += 1440;
+  }
+
+  let remaining = dailyWorkload - workedSoFar;
+  
   if (times.length === 1) {
     // Assume 1 hora (60 min) de intervalo por padrão se só tem a entrada
-    const startMins = timeToMinutes(times[0]);
-    const endMins = startMins + dailyWorkload + 60;
-    return minutesToTimeStr(endMins);
+    lastPunchMins += 60;
   }
 
-  let workedSoFar = 0;
-  for (let i = 0; i < times.length - 1; i += 2) {
-    workedSoFar += timeToMinutes(times[i+1]) - timeToMinutes(times[i]);
-  }
-  
-  const lastPunch = timeToMinutes(times[times.length - 1]);
-  const remaining = dailyWorkload - workedSoFar;
-  
-  // Se já cumpriu a carga, não tem previsão de saída (já devia ter saído)
   if (remaining <= 0) return null;
 
-  return minutesToTimeStr(lastPunch + remaining);
+  let currentClock = lastPunchMins;
+  let endClock = currentClock;
+  
+  while (true) {
+    const rawMinutes = endClock - lastPunchMins;
+    const nightMins = calculateNightMinutes(lastPunchMins, endClock);
+    const nightBonus = Math.round(nightMins * ((60 / 52.5) - 1));
+    const workForThisSegment = rawMinutes + nightBonus;
+    
+    if (workForThisSegment >= remaining) {
+      break;
+    }
+    endClock++;
+    
+    // safety escape
+    if (endClock - currentClock > 1440) break;
+  }
+
+  return minutesToTimeStr(endClock);
 }
 
 interface DailyRecordsTableProps {
