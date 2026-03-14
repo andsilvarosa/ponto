@@ -239,6 +239,9 @@ export default function Home() {
                 
                 localStorage.setItem('logged_matricula', m);
                 setMatricula(m);
+                if (viewMonth !== null && viewYear !== null) {
+                  await loadEmployeeData(m, viewMonth, viewYear);
+                }
               } catch (e: any) {
                 toast({ variant: "destructive", title: "Erro de Acesso", description: e.message });
               }
