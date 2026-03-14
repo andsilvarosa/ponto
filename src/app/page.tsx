@@ -86,6 +86,21 @@ export default function Home() {
     }
   }, [isUserLoading, viewMonth, viewYear]);
 
+  // Sincronização automática a cada 10 minutos
+  useEffect(() => {
+    if (!matricula || viewMonth === null || viewYear === null) return;
+
+    const INTERVAL_MS = 10 * 60 * 1000; // 10 minutos
+
+    const intervalId = setInterval(() => {
+      console.log("[AutoSync] Iniciando sincronização automática de 10 minutos...");
+      // background = true, silent = true para não incomodar o usuário com toasts a cada 10 min
+      syncDataFromPortal(matricula, viewMonth, viewYear, true, true);
+    }, INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [matricula, viewMonth, viewYear]);
+
   const loadEmployeeData = async (m: string, month: number, year: number) => {
     setIsLoading(true);
     try {
@@ -169,10 +184,10 @@ export default function Home() {
     }
   };
 
-  const syncDataFromPortal = async (m: string, month: number, year: number, background = false) => {
+  const syncDataFromPortal = async (m: string, month: number, year: number, background = false, silent = false) => {
     console.log("[Update] Starting sync for:", m);
     if (!background) setIsLoading(true);
-    toast({ title: "Sincronizando...", description: "Buscando dados mais recentes no portal...", duration: 5000 });
+    if (!silent) toast({ title: "Sincronizando...", description: "Buscando dados mais recentes no portal...", duration: 5000 });
     try {
       const result = await fetchMonthData(m, month, year);
       if (!result.success) throw new Error(result.error);
@@ -188,10 +203,10 @@ export default function Home() {
       
       await saveDailyEntriesBatch(m, month, year, normalizedData);
       await loadEmployeeData(m, month, year);
-      toast({ title: "Dados atualizados com sucesso!" });
+      if (!silent) toast({ title: "Dados atualizados com sucesso!" });
     } catch (e: any) {
       console.error("[Update] Error:", e);
-      toast({ variant: "destructive", title: "Erro na sincronização", description: e.message || "Portal lento ou fora do ar." });
+      if (!silent) toast({ variant: "destructive", title: "Erro na sincronização", description: e.message || "Portal lento ou fora do ar." });
     } finally {
       if (!background) setIsLoading(false);
     }
