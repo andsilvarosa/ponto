@@ -60,7 +60,7 @@ function getExpectedEndTime(times: string[], dailyWorkload: number): string | nu
   while (true) {
     const rawMinutes = endClock - lastPunchMins;
     const nightMins = calculateNightMinutes(lastPunchMins, endClock);
-    const nightBonus = Math.round(nightMins * ((60 / 52.3) - 1));
+    const nightBonus = Math.round(nightMins * ((60 / 52.7) - 1));
     const workForThisSegment = rawMinutes + nightBonus;
     
     if (workForThisSegment >= remaining) {
