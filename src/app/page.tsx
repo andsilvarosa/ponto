@@ -58,8 +58,8 @@ export default function Home() {
   const [matricula, setMatricula] = useState<string | null>(null);
   const [employeeData, setEmployeeData] = useState<EmployeeData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [viewMonth, setViewMonth] = useState<number | null>(null);
-  const [viewYear, setViewYear] = useState<number | null>(null);
+  const [viewMonth, setViewMonth] = useState<number>(new Date().getMonth() + 1);
+  const [viewYear, setViewYear] = useState<number>(new Date().getFullYear());
   
   const [showBalanceDialog, setShowBalanceDialog] = useState(false);
   const [showDsrDialog, setShowDsrDialog] = useState(false);
@@ -71,6 +71,18 @@ export default function Home() {
   const [autoSyncedMonths, setAutoSyncedMonths] = useState<string[]>([]);
   
   const [isUserLoading, setIsUserLoading] = useState(true);
+
+  useEffect(() => {
+    setIsUserLoading(false);
+  }, []);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('logged_matricula');
+    if (saved && !isUserLoading) {
+      setMatricula(saved);
+      loadEmployeeData(saved, viewMonth, viewYear);
+    }
+  }, [isUserLoading]);
 
   const handleSync = async (m: string, month: number, year: number, isAuto = false) => {
     if (isSyncing) return;
@@ -224,7 +236,7 @@ export default function Home() {
     setViewYear(newYear);
   };
 
-  if (isUserLoading || viewMonth === null || viewYear === null) return <div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="animate-spin text-primary w-12 h-12" /></div>;
+  if (isUserLoading) return <div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="animate-spin text-primary w-12 h-12" /></div>;
 
   const isAdminUser = matricula === '000000';
 
