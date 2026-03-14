@@ -80,7 +80,9 @@ export default function Home() {
     const saved = localStorage.getItem('logged_matricula');
     if (saved && !isUserLoading && viewMonth !== null && viewYear !== null) {
       setMatricula(saved);
-      loadEmployeeData(saved, viewMonth, viewYear);
+      loadEmployeeData(saved, viewMonth, viewYear).then(() => {
+        syncDataFromPortal(saved, viewMonth, viewYear, true);
+      });
     }
   }, [isUserLoading, viewMonth, viewYear]);
 
@@ -167,6 +169,34 @@ export default function Home() {
     }
   };
 
+  const syncDataFromPortal = async (m: string, month: number, year: number, background = false) => {
+    console.log("[Update] Starting sync for:", m);
+    if (!background) setIsLoading(true);
+    toast({ title: "Sincronizando...", description: "Buscando dados mais recentes no portal...", duration: 5000 });
+    try {
+      const result = await fetchMonthData(m, month, year);
+      if (!result.success) throw new Error(result.error);
+      
+      const freshData = result.data;
+      if (!freshData) return;
+      
+      const normalizedData = normalizeNightShifts(freshData.map(d => ({ 
+        ...d, 
+        id: d.date.replace(/\//g, '-'),
+        times: [...d.times] 
+      })));
+      
+      await saveDailyEntriesBatch(m, month, year, normalizedData);
+      await loadEmployeeData(m, month, year);
+      toast({ title: "Dados atualizados com sucesso!" });
+    } catch (e: any) {
+      console.error("[Update] Error:", e);
+      toast({ variant: "destructive", title: "Erro na sincronização", description: e.message || "Portal lento ou fora do ar." });
+    } finally {
+      if (!background) setIsLoading(false);
+    }
+  };
+
   const handleLogout = async () => {
     try {
       localStorage.removeItem('logged_matricula');
@@ -241,6 +271,7 @@ export default function Home() {
                 setMatricula(m);
                 if (viewMonth !== null && viewYear !== null) {
                   await loadEmployeeData(m, viewMonth, viewYear);
+                  syncDataFromPortal(m, viewMonth, viewYear, true);
                 }
               } catch (e: any) {
                 toast({ variant: "destructive", title: "Erro de Acesso", description: e.message });
@@ -267,46 +298,9 @@ export default function Home() {
                   <p className="text-[10px] font-black text-muted-foreground uppercase">Colaborador</p>
                   <h2 className="text-xl font-black text-foreground">#{matricula}</h2>
                 </div>
-                <Button onClick={async () => {
-                  if (!matricula || viewMonth === null || viewYear === null) {
-                    console.log("[Update] Missing data:", { matricula, viewMonth, viewYear });
-                    return;
-                  }
-                  console.log("[Update] Starting sync for:", matricula, "(Action Sync v2)");
-                  setIsLoading(true);
-                  const syncToast = toast({ title: "Sincronizando...", description: "Buscando dados no portal (isso pode levar alguns segundos).", duration: 10000 });
-                  try {
-                    const result = await fetchMonthData(matricula, viewMonth, viewYear);
-                    console.log("[Update] Result:", result.success ? "Success" : "Failed", result.error);
-                    
-                    if (!result.success) {
-                      throw new Error(result.error);
-                    }
-
-                    const freshData = result.data;
-                    if (!freshData) {
-                      console.log("[Update] No data returned");
-                      return;
-                    }
-                    console.log("[Update] Data received, normalizing...");
-                    const normalizedData = normalizeNightShifts(freshData.map(d => ({ 
-                      ...d, 
-                      id: d.date.replace(/\//g, '-'), // Adiciona ID baseado na data
-                      times: [...d.times] 
-                    })));
-                    
-                    console.log("[Update] Saving batch...");
-                    await saveDailyEntriesBatch(matricula, viewMonth, viewYear, normalizedData);
-
-                    console.log("[Update] Reloading local data...");
-                    await loadEmployeeData(matricula, viewMonth, viewYear);
-                    toast({ title: "Portal sincronizado!" });
-                  } catch (e: any) {
-                    console.error("[Update] Error:", e);
-                    toast({ variant: "destructive", title: "Erro na sincronização", description: e.message || "Portal lento ou fora do ar." });
-                  } finally {
-                    setIsLoading(false);
-                  }
+                <Button onClick={() => {
+                  if (!matricula || viewMonth === null || viewYear === null) return;
+                  syncDataFromPortal(matricula, viewMonth, viewYear, false);
                 }} disabled={isLoading} variant="default" className="shadow-xl font-black bg-primary transform transition hover:scale-105">
                   {isLoading ? <Loader2 className="animate-spin w-5 h-5" /> : <RefreshCcw className="w-5 h-5 mr-3" />}
                   ATUALIZAR DADOS
