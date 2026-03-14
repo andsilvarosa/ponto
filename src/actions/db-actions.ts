@@ -109,14 +109,15 @@ async function getDb() {
           is_bank_off INTEGER DEFAULT 0,
           is_manual INTEGER DEFAULT 0
         );
-        
-        // Migração segura para adicionar colunas se não existirem
-        try {
-          sqlite.exec("ALTER TABLE daily_entries ADD COLUMN is_manual INTEGER DEFAULT 0;");
-        } catch (e) {
-          // Coluna provavelmente já existe, ignoramos o erro
-        }
       `);
+
+      // Migração segura para adicionar colunas se não existirem (FORA do exec anterior)
+      try {
+        sqlite.exec("ALTER TABLE daily_entries ADD COLUMN is_manual INTEGER DEFAULT 0;");
+      } catch (e) {
+        // Coluna provavelmente já existe, ignoramos o erro
+      }
+
       return cachedDb;
     } catch (e) {
       console.error("Erro ao inicializar SQLite local:", e);

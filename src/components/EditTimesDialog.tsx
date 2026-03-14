@@ -75,9 +75,9 @@ export function EditTimesDialog({ isOpen, record, onSave, onClose }: EditTimesDi
                 { id: 'banco', label: 'Folga Banco de Horas', icon: <Landmark className="w-4 h-4 text-purple-600" />, color: 'border-purple-500/30' },
                 { id: 'trabalho', label: 'Forçar Dia Útil (Débito)', icon: null, color: 'border-destructive/30', labelClass: 'text-destructive' },
               ].map((item) => (
-                <div 
+                <Label
                   key={item.id}
-                  onClick={() => setDayType(item.id)}
+                  htmlFor={item.id}
                   className={cn(
                     "flex items-center space-x-3 border p-3 rounded-xl cursor-pointer transition-all hover:bg-accent",
                     dayType === item.id ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:border-primary/50",
@@ -85,11 +85,11 @@ export function EditTimesDialog({ isOpen, record, onSave, onClose }: EditTimesDi
                   )}
                 >
                   <RadioGroupItem value={item.id} id={item.id} />
-                  <Label htmlFor={item.id} className={cn("flex-1 cursor-pointer font-bold flex items-center justify-between", item.labelClass)}>
+                  <div className={cn("flex-1 font-bold flex items-center justify-between", item.labelClass)}>
                     {item.label}
                     {item.icon}
-                  </Label>
-                </div>
+                  </div>
+                </Label>
               ))}
             </RadioGroup>
           </section>

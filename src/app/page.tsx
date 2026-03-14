@@ -384,12 +384,25 @@ export default function Home() {
             isOpen={!!editingRecord} record={editingRecord}
             onSave={async (times, opts) => {
               if (matricula) {
-                const dayId = editingRecord.date.replace(/\//g, '-');
-                await saveSingleEntry(matricula, viewMonth!, viewYear!, dayId, {
-                  times, date: editingRecord.date, ...opts
-                });
-                setEditingRecord(null);
-                loadEmployeeData(matricula, viewMonth!, viewYear!);
+                setIsLoading(true);
+                try {
+                  const dayId = editingRecord.date.replace(/\//g, '-');
+                  const result = await saveSingleEntry(matricula, viewMonth!, viewYear!, dayId, {
+                    times, date: editingRecord.date, ...opts
+                  });
+                  
+                  if (result.success) {
+                    toast({ title: "Alteração salva!", description: `O dia ${editingRecord.date} foi atualizado com sucesso.` });
+                    setEditingRecord(null);
+                    await loadEmployeeData(matricula, viewMonth!, viewYear!);
+                  } else {
+                    toast({ variant: "destructive", title: "Erro ao salvar", description: result.error });
+                  }
+                } catch (e: any) {
+                  toast({ variant: "destructive", title: "Erro crítico", description: e.message });
+                } finally {
+                  setIsLoading(false);
+                }
               }
             }} onClose={() => setEditingRecord(null)} 
           />
